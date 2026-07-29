@@ -1,0 +1,45 @@
+# ATS board slugs, grouped by provider.
+#
+# VERIFY EACH SLUG before trusting a zero-result run. Open the URL pattern for
+# the provider in a browser; if you get JSON back, the slug is right:
+#
+#   greenhouse  https://boards-api.greenhouse.io/v1/boards/<slug>/jobs
+#   lever       https://api.lever.co/v0/postings/<slug>?mode=json
+#   ashby       https://api.ashbyhq.com/posting-api/job-board/<slug>
+#
+# Easiest way to find a slug: open a company's careers page and look at the URL.
+# job-boards.greenhouse.io/acmecorp -> slug is "acmecorp".
+# jobs.lever.co/acmecorp -> "acmecorp". jobs.ashbyhq.com/acmecorp -> "acmecorp".
+#
+# `name` is what gets matched against DOL employer names, so use the legal-ish
+# company name rather than a product name. Omit it and the slug is used instead.
+
+companies:
+  greenhouse:
+    - {slug: databricks, name: Databricks}
+    - {slug: stripe, name: Stripe}
+    - {slug: airbnb, name: Airbnb}
+    - {slug: robinhood, name: Robinhood Markets}
+    - {slug: doordash, name: DoorDash}
+    - {slug: instacart, name: Maplebear}          # Instacart files as Maplebear Inc
+    - {slug: samsara, name: Samsara}
+    - {slug: benchling, name: Benchling}
+    - {slug: gitlab, name: GitLab}
+    - {slug: cloudflare, name: Cloudflare}
+
+  lever:
+    - {slug: netflix, name: Netflix}
+    - {slug: plaid, name: Plaid}
+    - {slug: nuro, name: Nuro}
+    - {slug: attentive, name: Attentive Mobile}
+
+  ashby:
+    - {slug: openai, name: OpenAI}
+    - {slug: ramp, name: Ashby}
+    - {slug: notion, name: Notion Labs}
+    - {slug: linear, name: Linear Orbit}
+    - {slug: vercel, name: Vercel}
+
+# Cap-exempt employers (universities, university-affiliated nonprofits, national
+# labs) mostly run Workday or Taleo rather than these three, so they need a
+# different fetcher. That is the next thing to add.

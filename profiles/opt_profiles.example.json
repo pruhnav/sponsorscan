@@ -1,0 +1,56 @@
+{
+  "profile_id": "opt_swe",
+  "name": "Candidate",
+  "work_authorization": "opt",
+  "max_required_experience": 1,
+  "reject_senior_titles": true,
+  "reject_level_ii_plus_titles": true,
+  "reject_masters_mentions": false,
+  "reject_phd_mentions": false,
+  "reject_clearance_roles": true,
+  "reject_citizenship_required": true,
+  "reject_permanent_authorization_required": true,
+  "reject_opt_excluded": true,
+  "target_roles": [
+    "Software Engineer",
+    "Backend Engineer",
+    "Full Stack Engineer",
+    "Data Engineer",
+    "Machine Learning Engineer",
+    "AI Engineer"
+  ],
+  "skills": {
+    "Python": 7,
+    "Java": 6,
+    "SQL": 6,
+    "AWS": 5,
+    "React": 4,
+    "JavaScript": 4,
+    "TypeScript": 4,
+    "Docker": 3,
+    "Git": 3
+  },
+  "preferred_locations": [
+    "Remote",
+    "California",
+    "Texas",
+    "New York"
+  ],
+  "preferred_companies": [],
+  "company_tiers": {
+    "5": [],
+    "4": [],
+    "3": []
+  },
+  "minimum_score": 95,
+  "report_hours": 48,
+  "output_files": {
+    "all_matches": "opt_matches_48h.csv",
+    "new_matches": "opt_new_jobs_48h.csv",
+    "state": ".sponsorscan_opt_state.json"
+  },
+  "notifications": {
+    "email_enabled": false,
+    "google_sheets_enabled": false
+  }
+}

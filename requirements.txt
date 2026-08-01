@@ -2,3 +2,8 @@ requests>=2.31
 PyYAML>=6.0
 openpyxl>=3.1
 rapidfuzz>=3.0
+
+# Optional Google Sheets integration
+google-api-python-client>=2.137
+google-auth>=2.32
+google-auth-httplib2>=0.2

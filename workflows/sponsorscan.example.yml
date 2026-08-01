@@ -1,0 +1,138 @@
+name: SponsorScan
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs hourly from 6:00 AM through 11:00 PM Pacific during daylight time.
+    # GitHub cron uses UTC. Adjust this schedule if your local time zone or
+    # daylight-saving requirements differ.
+    - cron: "0 13-23 * * *"
+    - cron: "0 0-6 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      PROFILE_PATH: profiles/opt_profile.json
+      ALL_MATCHES_CSV: opt_matches_48h.csv
+      NEW_JOBS_CSV: opt_new_jobs_48h.csv
+      STATE_FILE: .sponsorscan_opt_state.json
+      REPORT_HOURS: "48"
+      SPONSORSCAN_PROFILE_NAME: "OPT Candidate"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Restore SponsorScan database cache
+        id: db-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: sponsorscan.db
+          key: sponsorscan-db-${{ runner.os }}-${{ hashFiles('companies.yaml') }}
+          restore-keys: |
+            sponsorscan-db-${{ runner.os }}-
+
+      - name: Download latest configured LCA file
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        env:
+          LCA_DOWNLOAD_URL: ${{ secrets.LCA_DOWNLOAD_URL }}
+        run: |
+          if [ -z "$LCA_DOWNLOAD_URL" ]; then
+            echo "LCA_DOWNLOAD_URL is required when no cached database exists."
+            exit 1
+          fi
+
+          curl --fail --location \
+            --retry 3 \
+            --output lca-disclosure.xlsx \
+            "$LCA_DOWNLOAD_URL"
+
+      - name: Load LCA data
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        run: |
+          python sponsorscan.py load-lca lca-disclosure.xlsx --replace
+
+      - name: Save SponsorScan database cache
+        if: steps.db-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: sponsorscan.db
+          key: sponsorscan-db-${{ runner.os }}-${{ hashFiles('companies.yaml') }}
+
+      - name: Fetch current job postings
+        run: |
+          python sponsorscan.py fetch-jobs --replace
+
+      - name: Generate personalized report
+        run: |
+          python sponsor_daily_report.py \
+            --profile "$PROFILE_PATH" \
+            --hours "$REPORT_HOURS" \
+            --out "$ALL_MATCHES_CSV" \
+            --new-out "$NEW_JOBS_CSV" \
+            --state "$STATE_FILE"
+
+      - name: Update Google Sheet
+        if: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON != '' && secrets.GOOGLE_SPREADSHEET_ID != '' }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID }}
+          ALL_MATCHES_SHEET: All Matches 48h
+          NEW_JOBS_SHEET: New Jobs 48h
+        run: |
+          python scripts/update_google_sheet.py
+
+      - name: Email new job matches
+        if: ${{ secrets.GMAIL_ADDRESS != '' && secrets.GMAIL_APP_PASSWORD != '' && secrets.NOTIFICATION_EMAIL != '' }}
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          EMAIL_SUBJECT_PREFIX: SponsorScan
+        run: |
+          python scripts/send_job_email.py
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sponsorscan-reports-${{ github.run_number }}
+          path: |
+            ${{ env.ALL_MATCHES_CSV }}
+            ${{ env.NEW_JOBS_CSV }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit updated state
+        run: |
+          if git diff --quiet -- "$STATE_FILE"; then
+            echo "State file did not change."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "$STATE_FILE"
+          git commit -m "chore: update SponsorScan state"
+
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

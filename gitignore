@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local databases and downloaded source data
+sponsorscan.db
+*.db
+*.sqlite
+*.sqlite3
+*.xlsx
+*.xls
+
+# Generated reports
+*.csv
+reports/
+artifacts/
+
+# SponsorScan state files
+.sponsorscan_state.json
+.sponsorscan_*_state.json
+*.state.json
+
+# Personal profile files
+profiles/*.json
+!profiles/*.example.json
+
+# Credentials and local environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+google-credentials*.json
+credentials*.json
+
+# Logs
+*.log
+logs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp

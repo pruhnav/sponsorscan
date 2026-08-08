@@ -411,3 +411,5 @@ The following files and values should never be committed:
 - local CSV reports, unless intentionally published.
 
 Add local and personalized files to `.gitignore` before enabling automation.
+
+## To be added

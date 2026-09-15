@@ -9,8 +9,16 @@ Profiles are JSON files that store candidate-specific configuration such as:
 - maximum acceptable experience
 - degree filters
 - resume skills
-- preferred locations
+- preferred locations and companies
+- company tiers
 - notification preferences
+
+`work_authorization` is a label for the candidate's situation; the reject_*
+booleans are what actually filter. `sponsor_daily_report.py` warns when the two
+disagree rather than rewriting either.
+
+`notifications` is read by whatever automation you wire up, not by the report
+itself, which always writes both CSVs.
 
 This module intentionally contains no secrets and can be committed safely.
 """
@@ -37,6 +45,11 @@ DEFAULT_PROFILE: dict[str, Any] = {
     "max_required_experience": 1,
     "reject_senior_titles": True,
     "reject_level_ii_plus_titles": True,
+    # "_required" detects a stated requirement ("must hold a PhD") and is on
+    # by default. "_mentions" fires on any occurrence at all, including "a
+    # Master's is a plus", so it stays opt-in.
+    "reject_phd_required": True,
+    "reject_masters_required": True,
     "reject_masters_mentions": False,
     "reject_phd_mentions": False,
     "reject_clearance_roles": True,
@@ -163,6 +176,8 @@ def validate_profile(profile: dict[str, Any]) -> None:
     for key in (
         "reject_senior_titles",
         "reject_level_ii_plus_titles",
+        "reject_phd_required",
+        "reject_masters_required",
         "reject_masters_mentions",
         "reject_phd_mentions",
         "reject_clearance_roles",

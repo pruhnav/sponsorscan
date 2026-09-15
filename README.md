@@ -1,4 +1,6 @@
-# sponsorscan
+<p align="center">
+  <img src="assets/banner.svg" alt="sponsorscan" width="100%">
+</p>
 
 Finds entry-level postings at employers with real H-1B filing history, and drops
 the ones that disqualify you outright.
@@ -213,6 +215,20 @@ The report keeps a local state file so `new_jobs_48h.csv` contains jobs that wer
 not present in the previous run. Keep each user's state file separate when
 running reports for more than one person.
 
+| Flag | Effect |
+|---|---|
+| `--profile profiles/mine.json` | Load candidate configuration from a profile |
+| `--db path/to/sponsorscan.db` | Read a database other than `./sponsorscan.db`; `SPONSORSCAN_DB` also works |
+| `--hours 72` | Widen or narrow the posting window |
+| `--min-score 110` | Raise the combined-score floor |
+| `--fuzzy-cutoff 95` | Tighten employer name matching; `0` requires an exact match |
+| `--include-non-us` | Keep postings outside the United States |
+| `--include-unknown-posted` | Keep postings whose ATS supplies no usable date |
+| `--reset-state` | Treat every current match as new |
+
+Employer matching uses the same exact-then-fuzzy lookup as `report`, so
+Instacart's postings still join to Maplebear Inc.
+
 ## Work-authorization configurations
 
 Work-authorization filtering should be configured separately from resume
@@ -276,8 +292,14 @@ A workflow step can call the uploader after report generation:
   run: python update_google_sheet.py
 ```
 
-If the uploader uses the Google Sheets API, add its required client libraries to
-`requirements.txt`.
+The uploader itself is not included: every deployment differs, so
+`docs/GOOGLE_SHEETS_SETUP.md` specifies what the script must do rather than
+assuming one implementation. Its client libraries are kept out of the main
+requirements file so that a plain install stays small:
+
+```powershell
+pip install -r requirements-sheets.txt
+```
 
 ## Optional email notifications
 
@@ -327,6 +349,15 @@ The complete process can run on a schedule through GitHub Actions:
 A scheduled workflow can also include `workflow_dispatch` so it can be tested
 manually from the Actions tab.
 
+`workflows/sponsorscan.example.yml` is a starting point rather than a working
+configuration. Copy it to `.github/workflows/`, then fill in the profile path,
+the output filenames, and the steps you actually want:
+
+```powershell
+mkdir .github\workflows
+copy workflows\sponsorscan.example.yml .github\workflows\sponsorscan.yml
+```
+
 Store credentials under:
 
 ```text
@@ -339,11 +370,23 @@ Never place secret values directly in the workflow YAML.
 
 ## Running the offline checks
 
+Neither of these touches the network.
+
+`selftest.py` drives the whole pipeline end to end against a synthetic DOL file
+and synthetic postings:
+
 ```powershell
 python selftest.py
 ```
 
-The same command works on Windows, macOS, and Linux while the virtual environment
+The unit tests cover the filtering, scoring, and parsing rules directly:
+
+```powershell
+pip install -r requirements-dev.txt
+python -m pytest tests -q
+```
+
+Both commands work on Windows, macOS, and Linux while the virtual environment
 is active.
 
 ## Caveats, read these
@@ -377,8 +420,8 @@ company-name heuristic.
 
 Two CSV columns are especially useful:
 
-- `lca_senior_wage_share` — the share of filings at prevailing wage Level III/IV.
-- `lca_denied_withdrawn_rate` — the share of filings that were denied or
+- `lca_senior_wage_share`: the share of filings at prevailing wage Level III/IV.
+- `lca_denied_withdrawn_rate`: the share of filings that were denied or
   withdrawn.
 
 Judge employers using those signals rather than company name alone.
@@ -411,5 +454,3 @@ The following files and values should never be committed:
 - local CSV reports, unless intentionally published.
 
 Add local and personalized files to `.gitignore` before enabling automation.
-
-## To be added

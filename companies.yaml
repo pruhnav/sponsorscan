@@ -35,7 +35,7 @@ companies:
 
   ashby:
     - {slug: openai, name: OpenAI}
-    - {slug: ramp, name: Ashby}
+    - {slug: ramp, name: Ramp Business Corporation}
     - {slug: notion, name: Notion Labs}
     - {slug: linear, name: Linear Orbit}
     - {slug: vercel, name: Vercel}

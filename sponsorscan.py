@@ -21,6 +21,7 @@ Run `python sponsorscan.py <command> --help` for per-command options.
 
 import argparse
 import csv
+import html
 import json
 import os
 import re
@@ -79,7 +80,6 @@ CREATE TABLE IF NOT EXISTS employers (
     withdrawn        INTEGER DEFAULT 0,
     titles           TEXT,
     states           TEXT,
-    wage_samples     TEXT,
     lvl1 INTEGER DEFAULT 0,
     lvl2 INTEGER DEFAULT 0,
     lvl3 INTEGER DEFAULT 0,
@@ -129,8 +129,6 @@ WANTED = {
     "status": ["CASE_STATUS"],
     "title": ["JOB_TITLE", "SOC_TITLE"],
     "state": ["WORKSITE_STATE", "WORKSITE_STATE_1", "EMPLOYER_STATE"],
-    "wage": ["WAGE_RATE_OF_PAY_FROM", "WAGE_RATE_OF_PAY_FROM_1"],
-    "wage_unit": ["WAGE_UNIT_OF_PAY", "WAGE_UNIT_OF_PAY_1"],
     # Prevailing wage level (I-IV). Under the FY2027 weighted selection rule,
     # petitions filed at Level III/IV get better lottery odds, so an employer's
     # typical level directly affects your chances, not just your pay.
@@ -168,18 +166,6 @@ def _iter_rows(path):
         with open(path, newline="", encoding="utf-8", errors="replace") as fh:
             for row in csv.reader(fh):
                 yield row
-
-
-def _annual_wage(value, unit):
-    try:
-        v = float(str(value).replace(",", "").replace("$", ""))
-    except (TypeError, ValueError):
-        return None
-    u = (str(unit) or "").strip().lower()
-    mult = {"year": 1, "hour": 2080, "week": 52, "bi-weekly": 26,
-            "biweekly": 26, "month": 12}.get(u, 1)
-    v *= mult
-    return v if 10_000 < v < 2_000_000 else None
 
 
 def cmd_load_lca(args):
@@ -228,7 +214,7 @@ def cmd_load_lca(args):
 
         rec = agg.setdefault(key, {
             "display": str(emp).strip(), "certified": 0, "denied": 0,
-            "withdrawn": 0, "titles": {}, "states": {}, "wages": [],
+            "withdrawn": 0, "titles": {}, "states": {},
             "lvl": {1: 0, 2: 0, 3: 0, 4: 0},
         })
 
@@ -256,10 +242,6 @@ def cmd_load_lca(args):
         if lvl_n:
             rec["lvl"][lvl_n] += 1
 
-        w = _annual_wage(get("wage"), get("wage_unit"))
-        if w and len(rec["wages"]) < 400:
-            rec["wages"].append(w)
-
     print(f"Read {n:,} rows, {len(agg):,} distinct employers.")
 
     payload = []
@@ -270,16 +252,16 @@ def cmd_load_lca(args):
             key, rec["display"], rec["certified"], rec["denied"], rec["withdrawn"],
             json.dumps([t for t, _ in top_titles]),
             json.dumps([s for s, _ in top_states]),
-            json.dumps(sorted(rec["wages"])[:200]),
             rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4],
         ))
 
     con.executemany(
         "INSERT OR REPLACE INTO employers "
         "(employer_norm, employer_display, certified, denied, withdrawn, titles, states, "
-        " wage_samples, lvl1, lvl2, lvl3, lvl4) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", payload)
+        " lvl1, lvl2, lvl3, lvl4) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)", payload)
     con.commit()
+    con.close()
     print(f"Loaded {len(payload):,} employers into {DB_PATH}")
 
 
@@ -288,6 +270,31 @@ def cmd_load_lca(args):
 # NOTE: every function in this section makes a live HTTP call and could NOT be
 # tested in the environment where this was written. If a provider changes its
 # response shape, this is the first place to look.
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_BLOCK_RE = re.compile(r"(?i)<\s*(?:br|/p|/div|/li|/tr|/h[1-6])\s*/?>")
+_SPACE_RUN = re.compile(r"[ \t\r\f\v]+")
+_BLANK_RUN = re.compile(r"\n\s*\n+")
+
+
+def html_to_text(raw):
+    """Flatten ATS markup to prose.
+
+    Greenhouse serves `content` as HTML inside an escaped JSON string, so a
+    posting arrives looking like `&lt;p&gt;We don&#39;t sponsor&lt;/p&gt;`.
+    The filters downstream are word-boundary regexes over prose and need real
+    text. Unescape, turn block tags into newlines so that clause-bounded
+    patterns cannot run across list items, then drop the remaining tags.
+    """
+    if not raw:
+        return ""
+    text = html.unescape(str(raw))
+    text = _BLOCK_RE.sub("\n", text)
+    text = _TAG_RE.sub(" ", text)
+    text = html.unescape(text)
+    text = _SPACE_RUN.sub(" ", text)
+    return _BLANK_RUN.sub("\n", text).strip()
+
 
 def _get_json(url, timeout=25):
     r = requests.get(url, headers=UA, timeout=timeout)
@@ -306,7 +313,7 @@ def fetch_greenhouse(slug):
             "source": "greenhouse", "title": j.get("title", ""),
             "location": loc, "url": j.get("absolute_url", ""),
             "posted": (j.get("updated_at") or "")[:10],
-            "description": j.get("content", "") or "",
+            "description": html_to_text(j.get("content", "")),
         })
     return out
 
@@ -324,8 +331,10 @@ def fetch_lever(slug):
             "url": j.get("hostedUrl", ""),
             "posted": time.strftime("%Y-%m-%d", time.gmtime((j.get("createdAt") or 0) / 1000))
                       if j.get("createdAt") else "",
-            "description": (j.get("descriptionPlain") or "") +
-                           " " + json.dumps(j.get("lists", [])),
+            "description": html_to_text(
+                (j.get("descriptionPlain") or "") + " " +
+                " ".join(str(d.get("text", "")) + " " + str(d.get("content", ""))
+                         for d in (j.get("lists") or []))),
         })
     return out
 
@@ -341,7 +350,7 @@ def fetch_ashby(slug):
             "location": j.get("location", "") or "",
             "url": j.get("jobUrl", "") or j.get("applyUrl", ""),
             "posted": (j.get("publishedAt") or "")[:10],
-            "description": j.get("descriptionPlain", "") or "",
+            "description": html_to_text(j.get("descriptionPlain", "")),
         })
     return out
 
@@ -350,7 +359,7 @@ FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch
 
 
 def cmd_fetch_jobs(args):
-    with open(args.companies) as fh:
+    with open(args.companies, encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
 
     con = connect()
@@ -388,6 +397,7 @@ def cmd_fetch_jobs(args):
             print(f"  {display:<28} {provider:<11} {len(rows):>4} postings")
             time.sleep(args.delay)
 
+    con.close()
     print(f"\n{total:,} postings stored.")
     if failed:
         print(f"{len(failed)} board(s) failed. Usually a wrong slug:")
@@ -444,14 +454,23 @@ def slug_candidates(name):
 
 
 def probe(provider, slug, timeout=12):
-    """Return (ok, n_jobs). A real board with zero openings still counts as ok."""
+    """Return (ok, n_jobs). A real board with zero openings still counts as ok.
+
+    `ok` is True (the board exists), False (it definitively does not), or None
+    (could not tell). The None case matters because a 429 or a read timeout
+    says nothing about the slug: recording it as False would write off a real
+    employer until the database is rebuilt. Only definitive answers are cached.
+    """
     url = PROBE_URLS[provider].format(slug=slug)
     try:
         r = requests.get(url, headers=UA, timeout=timeout)
     except requests.RequestException:
+        return None, 0
+    if r.status_code in (404, 410):
         return False, 0
     if r.status_code != 200:
-        return False, 0
+        # 429, 5xx, or a redirect to a login page: unknown, not a miss.
+        return None, 0
     try:
         data = r.json()
     except ValueError:
@@ -509,18 +528,24 @@ def cmd_discover(args):
     cache = {(p, s): (ok, n) for p, s, ok, n in con.execute(
         "SELECT provider, slug, ok, n_jobs FROM probe_cache")}
 
-    tasks = []
+    # Two employers can generate the same slug guess ("Acme Labs" and "Acme
+    # Laboratories" both reduce to "acme"). One task per (provider, slug),
+    # attributed to the heaviest filer, avoids probing the same URL twice.
+    pending = {}
     for norm, display, certified in candidates:
         for slug in slug_candidates(display):
             for provider in PROBE_URLS:
                 if (provider, slug) in cache:
                     continue
-                tasks.append((provider, slug, display, certified))
+                prev = pending.get((provider, slug))
+                if prev is None or certified > prev[1]:
+                    pending[(provider, slug)] = (display, certified)
+    tasks = [(p, s, d, c) for (p, s), (d, c) in pending.items()]
 
     print(f"{len(tasks):,} probes to run "
           f"({len(cache):,} already cached). Ctrl-C is safe, results are saved as they land.")
 
-    found, done = {}, 0
+    found, done, transient = {}, 0, 0
     if tasks:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -533,6 +558,11 @@ def cmd_discover(args):
                     except Exception:
                         ok, n = False, 0
                     done += 1
+                    if ok is None:
+                        # Not a definitive answer. Left uncached so that the
+                        # next run retries instead of writing the employer off.
+                        transient += 1
+                        continue
                     con.execute(
                         "INSERT OR REPLACE INTO probe_cache VALUES (?,?,?,?,?)",
                         (provider, slug, int(ok), n, time.strftime("%Y-%m-%d")))
@@ -546,6 +576,9 @@ def cmd_discover(args):
                 print("\nInterrupted, saving what we have.")
             finally:
                 con.commit()
+    if transient:
+        print(f"  {transient:,} probe(s) failed transiently (timeout, rate limit "
+              f"or server error) and were left uncached. Re-run to retry them.")
 
     # Rebuild the company list from every cached hit that maps to a candidate.
     by_display = {}
@@ -560,7 +593,7 @@ def cmd_discover(args):
 
     existing = {}
     if args.merge and os.path.exists(args.out):
-        with open(args.out) as fh:
+        with open(args.out, encoding="utf-8") as fh:
             existing = (yaml.safe_load(fh) or {}).get("companies") or {}
 
     merged = {p: list(existing.get(p) or []) for p in PROBE_URLS}
@@ -575,7 +608,7 @@ def cmd_discover(args):
         seen[provider].add(slug)
         added += 1
 
-    with open(args.out, "w") as fh:
+    with open(args.out, "w", encoding="utf-8") as fh:
         fh.write("# Generated by `sponsorscan.py discover`. Hand edits to `name:`\n"
                  "# are preserved on re-run with --merge (the default).\n"
                  "#\n"
@@ -586,6 +619,7 @@ def cmd_discover(args):
         yaml.safe_dump({"companies": {p: merged[p] for p in PROBE_URLS if merged[p]}},
                        fh, sort_keys=False, default_flow_style=False)
 
+    con.close()
     total = sum(len(v) for v in merged.values())
     print(f"\n{len(by_display):,} employers matched to a live board. "
           f"Added {added:,} new; {total:,} companies now in {args.out}.")
@@ -597,12 +631,14 @@ def cmd_discover(args):
 # Phrases that mean you are excluded regardless of anything else. Checked against
 # the posting body. This is the filter that actually matters while on OPT.
 DISQUALIFIERS = [
-    # Any negation followed by "sponsor" within the same sentence. Catches the
+    # Any negation followed by "sponsor" within the same clause. Catches the
     # long tail of phrasings ("do not offer", "does not provide", "unable to",
     # "without", "no sponsorship available", "not now or in the future require")
-    # without needing a pattern per variant. Bounded by [^.] so it cannot leak
-    # across a sentence boundary and match an unrelated negation.
-    r"\b(?:not|no|non|unable|without|cannot|can't|won't|unwilling)\b[^.]{0,60}?sponsor",
+    # without needing a pattern per variant. A sentence, a semicolon and a line
+    # break all end the clause, so that an unrelated negation earlier in the
+    # sentence cannot reach the word: "There is no cost to relocate; we sponsor
+    # visas" is not a refusal.
+    r"\b(?:not|no|non|unable|without|cannot|can't|won't|unwilling)\b[^.;\n]{0,60}?sponsor",
     r"\bmust be (?:a |an )?(?:u\.?\s?s\.?|united states)\s?(?:citizen|person|national)\b",
     r"\b(?:u\.?\s?s\.?|united states)\s?citizenship (?:is )?required\b",
     r"\bsecurity clearance\b",
@@ -654,7 +690,7 @@ def match_employer(company_norm, index, keys, cutoff):
     """Exact key match, then fuzzy fallback."""
     if company_norm in index:
         return company_norm, 100
-    if not HAVE_RAPIDFUZZ or not keys:
+    if not HAVE_RAPIDFUZZ or not keys or cutoff <= 0:
         return None, 0
     hit = rf_process.extractOne(
         company_norm, keys, scorer=rf_fuzz.token_set_ratio, score_cutoff=cutoff)
@@ -734,6 +770,7 @@ def cmd_report(args):
             "lca_denied_withdrawn_rate": emp["trouble_rate"] if emp else None,
         })
 
+    con.close()
     results.sort(key=lambda r: (-r["score"], r["company"]))
 
     if args.out:

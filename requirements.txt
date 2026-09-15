@@ -3,7 +3,6 @@ PyYAML>=6.0
 openpyxl>=3.1
 rapidfuzz>=3.0
 
-# Optional Google Sheets integration
-google-api-python-client>=2.137
-google-auth>=2.32
-google-auth-httplib2>=0.2
+# The Google Sheets integration is optional and its client libraries are not
+# needed to run any sponsorscan command. Install them only if you wire up an
+# uploader:  pip install -r requirements-sheets.txt

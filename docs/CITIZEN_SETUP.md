@@ -72,15 +72,30 @@ The citizen example includes these defaults:
 | `max_required_experience` | Highest acceptable minimum years-of-experience requirement |
 | `reject_senior_titles` | Reject Senior, Staff, Principal, Lead, Manager, and similar titles |
 | `reject_level_ii_plus_titles` | Reject Engineer II/III/IV/V and numeric Level 2+ titles |
-| `reject_masters_mentions` | Reject postings that mention a master's degree |
-| `reject_phd_mentions` | Reject postings that mention a PhD or doctorate |
+| `reject_masters_required` | Reject postings that *require* a master's degree (default true) |
+| `reject_phd_required` | Reject postings that *require* a PhD (default true) |
+| `reject_masters_mentions` | Reject postings that mention a master's degree at all, including "a plus" |
+| `reject_phd_mentions` | Reject postings that mention a PhD at all, including "a plus" |
 | `reject_clearance_roles` | Reject roles that require a security clearance |
 | `reject_citizenship_required` | Keep or reject U.S.-citizenship-required roles |
 | `reject_permanent_authorization_required` | Keep or reject permanent-work-authorization roles |
 | `reject_opt_excluded` | Relevant mainly to OPT profiles; normally false for citizens |
 
+The `_required` flags look for a stated requirement, such as "a PhD is
+required" or "minimum qualifications: master's degree". They are on by default
+because such a posting is a genuine blocker for an entry-level candidate.
+
+The `_mentions` flags are far blunter: they fire on any occurrence of the
+degree, so "a Master's is a plus" is rejected too. Leave them off unless the
+`_required` filters are letting through more than you want to read.
+
 A U.S. citizen can generally keep citizenship-required roles, so
-`reject_citizenship_required` is false by default.
+`reject_citizenship_required` is set to false in
+`profiles/citizen_profile.example.json`. The loader's own default is true, so a
+profile written from scratch has to set it explicitly. `sponsor_daily_report.py`
+prints a warning when `work_authorization` is `us_citizen` while the flag is
+still true, since that combination drops exactly the roles a citizen is
+eligible for.
 
 A citizen may still not hold an active security clearance. Keep
 `reject_clearance_roles` set to true unless the candidate is specifically

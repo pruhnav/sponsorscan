@@ -5,6 +5,8 @@
   "max_required_experience": 1,
   "reject_senior_titles": true,
   "reject_level_ii_plus_titles": true,
+  "reject_phd_required": true,
+  "reject_masters_required": true,
   "reject_masters_mentions": false,
   "reject_phd_mentions": false,
   "reject_clearance_roles": true,

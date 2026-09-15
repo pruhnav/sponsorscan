@@ -141,7 +141,36 @@ appropriate for an entry-level candidate.
 
 ## 5. Configure degree filters
 
-The example profile keeps advanced-degree mentions by default:
+There are two levels of degree filtering, and the difference matters.
+
+The `_required` flags remove postings that state a graduate degree as a
+requirement:
+
+```text
+A PhD in computer science is required
+Minimum qualifications: master's degree in a related field
+```
+
+They are on by default, because such a posting is a real blocker for an
+entry-level candidate:
+
+```json
+{
+  "reject_phd_required": true,
+  "reject_masters_required": true
+}
+```
+
+The `_mentions` flags are much blunter. They fire on any occurrence of the
+degree at all, including a posting that only says it would be nice to have:
+
+```text
+Master's preferred
+PhD is a plus
+```
+
+Those postings are usually still worth applying to, so the mention filters are
+off by default:
 
 ```json
 {
@@ -150,23 +179,14 @@ The example profile keeps advanced-degree mentions by default:
 }
 ```
 
-Set either value to `true` only when you want to remove every posting that
-mentions that degree.
-
-For example:
+Turn them on only if the `_required` filters are still letting through more
+than you want to read:
 
 ```json
 {
   "reject_masters_mentions": true,
   "reject_phd_mentions": true
 }
-```
-
-is intentionally strict and may remove postings that say:
-
-```text
-Master's preferred
-PhD is a plus
 ```
 
 Use the settings that match the candidate's actual preferences.

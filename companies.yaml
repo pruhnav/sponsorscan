@@ -62,3 +62,15 @@ companies:
 
 # Cap-exempt employers (universities, university-affiliated nonprofits, national
 # labs) often run Workday too, so their boards can be added the same way.
+
+# Curated lists that name many employers each. Each entry is owner/repo/path of
+# a markdown file on GitHub. They have no job descriptions, so their postings
+# are scored on the title alone, and a company whose own board is listed above
+# keeps the board's copy. Delete a line to stop following that list.
+#
+#   README.md        USA internships
+#   NEW_GRAD_USA.md  USA new grad roles
+feeds:
+  speedyapply:
+    - speedyapply/2027-SWE-College-Jobs/README.md
+    - speedyapply/2027-SWE-College-Jobs/NEW_GRAD_USA.md

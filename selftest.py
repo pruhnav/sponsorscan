@@ -185,6 +185,15 @@ with open("test_companies.yaml") as fh:
 assert [e["slug"] for e in kept] == ["adobe/wd5/external_experienced"], kept
 print("PASS  discover keeps providers it cannot probe")
 
+# Feeds are not boards, so a rebuild must carry them over too
+feeds = {"speedyapply": ["speedyapply/2027-SWE-College-Jobs/README.md"]}
+with open("test_companies.yaml", "w") as fh:
+    _yaml.safe_dump({"companies": got, "feeds": feeds}, fh)
+ss.cmd_discover(A())
+with open("test_companies.yaml") as fh:
+    assert _yaml.safe_load(fh).get("feeds") == feeds
+print("PASS  discover keeps feeds")
+
 # --workday searches Workday tenants, records hits, and caches every answer
 WORKDAY_BOARDS = {"nuro": (True, "nuro/wd5/external", 50),
                   "benchling": (False, "benchling/wd1", 0)}

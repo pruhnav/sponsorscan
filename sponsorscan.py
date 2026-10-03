@@ -524,6 +524,68 @@ FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch
             "workday": fetch_workday}
 
 
+# SpeedyApply's college job lists are markdown tables regenerated daily from a
+# private database, so the tables are the only public copy. A row has company,
+# title, location, an apply link and an age in days, but no description, so the
+# report's disqualifier and skill checks see the title alone.
+FEED_SOURCES = {"speedyapply"}
+_FEED_ROW = re.compile(r"^\|(.+)\|\s*(\d+)d\s*\|\s*$")
+_HREF = re.compile(r'href="([^"]+)"')
+_STRONG = re.compile(r"<strong>(.*?)</strong>", re.S)
+
+
+def _feed_url(url):
+    """Lowercased host and path without query or trailing slash, for dedupe."""
+    parts = urllib.parse.urlsplit((url or "").strip())
+    return f"{parts.netloc.lower()}{parts.path.rstrip('/')}"
+
+
+def fetch_speedyapply(slug, today=None):
+    """slug is 'owner/repo/path', e.g. 'speedyapply/2027-SWE-College-Jobs/README.md'."""
+    parts = slug.split("/", 2)
+    if len(parts) != 3:
+        raise ValueError(f"speedyapply slug must be owner/repo/path, got '{slug}'")
+    owner, repo, path = parts
+    r = requests.get(f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}",
+                     headers=UA, timeout=25)
+    r.raise_for_status()
+
+    # Ages count from when the tables were generated, which is close enough
+    # to the fetch time for a day-granular posted date.
+    today = today or time.time()
+    out = []
+    for line in r.text.splitlines():
+        m = _FEED_ROW.match(line.strip())
+        if not m:
+            continue
+        cells = [c.strip() for c in m.group(1).split("|")]
+        company = _STRONG.search(cells[0]) if cells else None
+        link = _HREF.search(cells[-1]) if cells else None
+        if len(cells) < 4 or not company or not link:
+            continue
+        url = html.unescape(link.group(1))
+        out.append({
+            "job_key": f"speedyapply:{_feed_url(url)}",
+            "source": "speedyapply",
+            "company": html.unescape(_STRONG.sub(r"\1", company.group(1))).strip(),
+            "title": html.unescape(cells[1]),
+            "location": html.unescape(re.sub(r"(?i)<br\s*/?>", "; ", cells[2])),
+            "url": url,
+            "posted": time.strftime("%Y-%m-%d",
+                                    time.gmtime(today - int(m.group(2)) * 86400)),
+            "description": "",
+        })
+
+    # A list that renders but yields no rows means the table format changed,
+    # which must show up as a failed board rather than a quiet empty one.
+    if not out:
+        raise ValueError(f"no job rows found in {path}; the table format may have changed")
+    return out
+
+
+FEED_FETCHERS = {"speedyapply": fetch_speedyapply}
+
+
 def cmd_fetch_jobs(args):
     with open(args.companies, encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
@@ -579,6 +641,49 @@ def cmd_fetch_jobs(args):
             con.commit()
             total += len(rows)
             print(f"  {display:<28} {provider:<11} {len(rows):>4} postings")
+            time.sleep(args.delay)
+
+    # Feeds list many employers each, so they run after the boards: a company
+    # whose own board was fetched keeps the board's copy, which has the
+    # description, and a posting already stored under the same URL is skipped.
+    boards = {r[0] for r in con.execute("SELECT company_norm FROM fetched_companies")}
+    urls = {_feed_url(r[0]) for r in con.execute("SELECT url FROM jobs") if r[0]}
+    for provider, entries in (cfg.get("feeds") or {}).items():
+        fetcher = FEED_FETCHERS.get(provider)
+        if not fetcher:
+            print(f"  ! unknown feed '{provider}', skipping")
+            continue
+        for slug in entries or []:
+            try:
+                jobs = fetcher(slug)
+            except Exception as exc:
+                failed.append(f"{provider}/{slug}: {exc}")
+                con.execute("INSERT OR REPLACE INTO fetch_failures VALUES (?, ?, ?)",
+                            (f"{provider}/{slug}", str(exc)[:200],
+                             time.strftime("%Y-%m-%d %H:%M")))
+                con.commit()
+                continue
+            rows = []
+            for j in jobs:
+                company_norm = norm_employer(j["company"])
+                if company_norm in boards or _feed_url(j["url"]) in urls:
+                    continue
+                urls.add(_feed_url(j["url"]))
+                rows.append((
+                    j["job_key"], j["source"], j["company"], company_norm,
+                    j["title"], j["location"], j["url"], j["posted"],
+                    j["description"], time.strftime("%Y-%m-%d %H:%M"),
+                ))
+            con.executemany(
+                "INSERT OR REPLACE INTO jobs (job_key, source, company, company_norm, "
+                "title, location, url, posted, description, fetched_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+            con.execute("DELETE FROM fetch_failures WHERE board = ?",
+                        (f"{provider}/{slug}",))
+            con.commit()
+            total += len(rows)
+            print(f"  {slug:<28} {provider:<11} {len(rows):>4} postings "
+                  f"({len(jobs) - len(rows)} already on a fetched board)")
             time.sleep(args.delay)
 
     con.close()
@@ -913,10 +1018,14 @@ def cmd_discover(args):
             if prev is None or n > prev[2]:
                 by_display[display] = ("workday", board, n, certified)
 
-    existing = {}
-    if args.merge and os.path.exists(args.out):
+    existing, feeds = {}, {}
+    if os.path.exists(args.out):
         with open(args.out, encoding="utf-8") as fh:
-            existing = (yaml.safe_load(fh) or {}).get("companies") or {}
+            cfg = yaml.safe_load(fh) or {}
+        # Feeds are not boards discover can find, so they survive a rebuild.
+        feeds = cfg.get("feeds") or {}
+        if args.merge:
+            existing = cfg.get("companies") or {}
 
     # Providers discover cannot probe, such as Workday, are carried over as-is.
     merged = {p: list(v or []) for p, v in existing.items()}
@@ -941,8 +1050,10 @@ def cmd_discover(args):
                  "# probe, so a listed board definitely exists. It is still possible for\n"
                  "# a guess to land on a DIFFERENT company with a similar name. If a\n"
                  "# company's postings look wrong, delete its line.\n\n")
-        yaml.safe_dump({"companies": {p: v for p, v in merged.items() if v}},
-                       fh, sort_keys=False, default_flow_style=False)
+        out = {"companies": {p: v for p, v in merged.items() if v}}
+        if feeds:
+            out["feeds"] = feeds
+        yaml.safe_dump(out, fh, sort_keys=False, default_flow_style=False)
 
     con.close()
     total = sum(len(v) for v in merged.values())

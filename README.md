@@ -22,6 +22,11 @@ It joins two sources that cannot go stale on someone else's schedule:
 - **Public ATS job board APIs** (Greenhouse, Lever, Ashby, Workday). Served straight from
   the employer, no aggregator in between.
 
+Curated college job lists such as
+[SpeedyApply's](https://github.com/speedyapply/2027-SWE-College-Jobs) can be
+followed too, to reach employers with no board listed. Their postings carry no
+description, so they are ranked on the title alone.
+
 The core workflow is:
 
 1. Load the latest LCA disclosure data.

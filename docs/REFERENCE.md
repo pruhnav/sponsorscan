@@ -130,6 +130,34 @@ seconds.
 |---|---|
 | `--workday-days 5` | Open Workday postings up to 5 days old. Raise it when running the report with `--hours` above 48, or older postings will be missing |
 
+### Curated lists
+
+The `feeds:` section of `companies.yaml` follows curated job lists that name
+many employers each, so postings at companies with no board listed still reach
+the report. It ships following SpeedyApply's
+[2027 SWE College Jobs](https://github.com/speedyapply/2027-SWE-College-Jobs),
+whose tables are regenerated daily:
+
+```yaml
+feeds:
+  speedyapply:
+    - speedyapply/2027-SWE-College-Jobs/README.md        # USA internships
+    - speedyapply/2027-SWE-College-Jobs/NEW_GRAD_USA.md  # USA new grad roles
+```
+
+Each entry is `owner/repo/path` of a markdown file on GitHub, read in SpeedyApply's
+table format. Delete a line to stop following that list. Feeds run after the
+boards, and a posting is skipped when its company's own board was fetched or its
+URL is already stored, since the board's copy carries the description.
+
+A list row has no description, only company, title, location and an age in days.
+So a feed posting is scored on its title alone, and the citizenship, clearance,
+degree and experience checks cannot see the requirements in its body. Open the
+posting before applying. Its posted date is accurate to the day.
+
+New employers appear on a list all the time, so a feed posting at a company the
+report has not seen before is reported as new rather than silently baselined.
+
 ## 4. Generate the standard report
 
 ```powershell

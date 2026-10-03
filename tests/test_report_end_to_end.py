@@ -143,13 +143,13 @@ def test_reset_state_makes_everything_new_again(workspace):
 # fetch, and comes back on the next good run; that must not read as new.
 
 def add_job(workspace, job_id, company, title="Software Engineer, New Grad",
-            location="San Francisco, CA", description="Python."):
+            location="San Francisco, CA", description="Python.", source="test"):
     from sponsorscan import norm_employer
     posted = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     con = sqlite3.connect(workspace / "sponsorscan.db")
     con.execute(
         "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (f"test:{job_id}", "test", company, norm_employer(company), title, location,
+        (f"test:{job_id}", source, company, norm_employer(company), title, location,
          f"https://example.com/jobs/{job_id}", posted, description, "2026-09-15"))
     con.commit()
     con.close()
@@ -204,6 +204,13 @@ def test_first_sighting_of_a_company_is_a_silent_baseline(workspace):
     add_job(workspace, 101, "Stripe", title="Data Engineer, New Grad")
     run_report(workspace)
     assert new_titles(workspace) == {("Stripe", "Data Engineer, New Grad")}
+
+
+def test_first_sighting_of_a_company_on_a_feed_is_new(workspace):
+    run_report(workspace)
+    add_job(workspace, 100, "Stripe", description="", source="speedyapply")
+    run_report(workspace)
+    assert new_titles(workspace) == {("Stripe", "Software Engineer, New Grad")}
 
 
 def test_company_fetched_with_no_postings_is_already_tracked(workspace):

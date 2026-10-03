@@ -174,6 +174,125 @@ def test_fetch_records_boards_that_answered(monkeypatch, tmp_path):
     assert fetched == {"stripe"}, "a board that failed must not count as tracked"
 
 
+# ------------------------------------------------------------ speedyapply
+
+APPLY = '<img src="https://i.imgur.com/x.png" alt="Apply" width="70"/>'
+FEED = f"""# 2027 SWE Jobs
+
+<!-- TABLE_FAANG_START -->
+| Company | Position | Location | Salary | Posting | Age |
+|---|---|---|---|---|---|
+| <a href="https://www.stripe.com"><strong>Stripe</strong></a> | Software Engineer, New Grad | Seattle, WA | $150k/yr | <a href="https://job-boards.greenhouse.io/stripe/jobs/1?gh_src=x">{APPLY}</a> | 0d |
+<!-- TABLE_FAANG_END -->
+
+<!-- TABLE_OTHER_START -->
+| Company | Position | Location | Posting | Age |
+|---|---|---|---|---|
+| <strong>Tom &amp; Co</strong> | Data Engineer Intern | Austin, TX<br>Remote | <a href="https://jobs.example.com/2">{APPLY}</a> | 3d |
+<!-- TABLE_OTHER_END -->
+"""
+DAY = 86400
+NOW = 20000 * DAY  # 2024-10-04 00:00 UTC
+
+
+class _Text:
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
+
+def test_speedyapply_rows_carry_their_own_company(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Text(FEED))
+    jobs = ss.fetch_speedyapply("speedyapply/2027-SWE-College-Jobs/README.md", today=NOW)
+
+    assert [(j["company"], j["title"], j["posted"]) for j in jobs] == [
+        ("Stripe", "Software Engineer, New Grad", "2024-10-04"),
+        ("Tom & Co", "Data Engineer Intern", "2024-10-01"),
+    ]
+    assert jobs[1]["location"] == "Austin, TX; Remote"
+    assert jobs[0]["url"] == "https://job-boards.greenhouse.io/stripe/jobs/1?gh_src=x"
+    assert jobs[0]["job_key"] == "speedyapply:job-boards.greenhouse.io/stripe/jobs/1"
+
+
+def test_speedyapply_without_rows_is_a_failure(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Text("# moved to a new repo\n"))
+    with pytest.raises(ValueError, match="no job rows"):
+        ss.fetch_speedyapply("speedyapply/2027-SWE-College-Jobs/README.md")
+
+
+def test_speedyapply_slug_must_name_a_file():
+    with pytest.raises(ValueError, match="owner/repo/path"):
+        ss.fetch_speedyapply("speedyapply/2027-SWE-College-Jobs")
+
+
+def test_feed_defers_to_a_fetched_board(monkeypatch, tmp_path):
+    import argparse
+    import sqlite3
+
+    def stripe_board(slug):
+        return [{"job_key": "greenhouse:stripe:9", "source": "greenhouse",
+                 "title": "Backend Engineer", "location": "Seattle, WA",
+                 "url": "https://job-boards.greenhouse.io/stripe/jobs/9",
+                 "posted": "2024-10-04", "description": "Python."}]
+
+    def feed(slug):
+        return [
+            {"job_key": "speedyapply:a", "source": "speedyapply", "company": "Stripe",
+             "title": "Software Engineer, New Grad", "location": "Seattle, WA",
+             "url": "https://job-boards.greenhouse.io/stripe/jobs/1",
+             "posted": "2024-10-04", "description": ""},
+            {"job_key": "speedyapply:b", "source": "speedyapply", "company": "Globex Inc.",
+             "title": "Data Engineer Intern", "location": "Austin, TX",
+             "url": "https://jobs.example.com/2", "posted": "2024-10-04", "description": ""},
+            {"job_key": "speedyapply:c", "source": "speedyapply", "company": "Globex",
+             "title": "Data Engineer Intern", "location": "Austin, TX",
+             "url": "https://jobs.example.com/2/?ref=newgrad", "posted": "2024-10-04",
+             "description": ""},
+        ]
+
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(ss, "FETCHERS", {"greenhouse": stripe_board})
+    monkeypatch.setattr(ss, "FEED_FETCHERS", {"speedyapply": feed})
+    companies = tmp_path / "companies.yaml"
+    companies.write_text(
+        "companies:\n  greenhouse:\n    - {slug: stripe, name: Stripe}\n"
+        "feeds:\n  speedyapply:\n    - o/r/README.md\n", encoding="utf-8")
+
+    ss.cmd_fetch_jobs(argparse.Namespace(companies=str(companies), replace=True, delay=0,
+                                          workday_days=3))
+
+    con = sqlite3.connect(tmp_path / "t.db")
+    jobs = con.execute("SELECT company, source FROM jobs ORDER BY job_key").fetchall()
+    fetched = {r[0] for r in con.execute("SELECT company_norm FROM fetched_companies")}
+    con.close()
+    assert jobs == [("Stripe", "greenhouse"), ("Globex Inc.", "speedyapply")], \
+        "a fetched board's company and a repeated URL must not come in twice"
+    assert fetched == {"stripe"}, "a feed's companies are not boards"
+
+
+def test_failed_feed_is_recorded(monkeypatch, tmp_path):
+    import argparse
+    import sqlite3
+
+    def down(slug):
+        raise requests.ConnectionError("down")
+
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(ss, "FEED_FETCHERS", {"speedyapply": down})
+    companies = tmp_path / "companies.yaml"
+    companies.write_text("feeds:\n  speedyapply:\n    - o/r/README.md\n", encoding="utf-8")
+
+    ss.cmd_fetch_jobs(argparse.Namespace(companies=str(companies), replace=True, delay=0,
+                                          workday_days=3))
+
+    con = sqlite3.connect(tmp_path / "t.db")
+    boards = [r[0] for r in con.execute("SELECT board FROM fetch_failures")]
+    con.close()
+    assert boards == ["speedyapply/o/r/README.md"]
+
+
 # ---------------------------------------------------------------- workday
 
 @pytest.mark.parametrize("text, days", [

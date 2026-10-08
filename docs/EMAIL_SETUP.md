@@ -23,29 +23,47 @@ Do not use your normal Gmail password in GitHub Actions.
 
 ## 2. Create a Gmail App Password
 
-Sign in to the Google account that will send SponsorScan notifications.
+Gmail does not accept your normal password from a script. It needs an App
+Password: a separate 16-letter password that only SponsorScan uses, and that
+you can delete at any time without changing your real password.
 
-Enable 2-Step Verification if it is not already enabled, then create an App
-Password for SponsorScan.
+Open each link below in a browser signed in to the Gmail account that will
+**send** the alerts. Your profile picture at the top right of each page shows
+which account is active; click it to switch.
 
-Use a name such as:
+### Step 1: turn on 2-Step Verification
 
-```text
-SponsorScan GitHub Actions
-```
+Open https://myaccount.google.com/signinoptions/twosv
 
-Google will generate a 16-character password. Store that value securely. Google
-displays it in four groups of four; the spaces are optional.
+1. Google may ask for your password first.
+2. If the page says **2-Step Verification is on**, go to step 2.
+3. Otherwise click **Turn on 2-Step Verification** and follow the prompts.
+   Google asks for a phone number and texts it a code.
 
-- 2-Step Verification: https://myaccount.google.com/signinoptions/twosv
-- App Passwords: https://myaccount.google.com/apppasswords
+### Step 2: create the App Password
 
-If the App Passwords page says the setting is unavailable, 2-Step Verification
-is off, or the account is a work or school account whose administrator has
-disabled App Passwords. A personal Gmail account avoids the second case.
+Open https://myaccount.google.com/apppasswords
+
+1. In the **App name** box, type `SponsorScan` and click **Create**.
+2. A box titled **Generated app password** shows 16 letters in four groups,
+   like `abcd efgh ijkl mnop`. The spaces do not matter.
+3. Copy them now. Google never shows them again. If you lose them, delete this
+   App Password on the same page and create another.
+4. Click **Done**.
+
+If the page says **The setting you are looking for is not available for your
+account**, either 2-Step Verification is still off (go back to step 1), or this
+is a work or school account whose administrator has disabled App Passwords. A
+personal Gmail account avoids the second case.
 
 The Gmail address that creates the App Password must be the same address used in
 `GMAIL_ADDRESS`.
+
+### Step 3: test it
+
+Run the `--check` commands in [section 6](#6-test-locally). They log in and
+stop without sending anything. **Check passed. Nothing was sent.** means it
+worked.
 
 ## 3. Add GitHub Actions secrets
 

@@ -23,6 +23,7 @@ from onboarding import (
     latest_lca_link,
     run_setup,
     save_profile,
+    setup_guide,
     run_checks,
     skill_weight,
     slugify,
@@ -602,6 +603,7 @@ def test_run_setup_asks_before_overwriting_and_honours_a_new_name(tmp_path):
     ask = scripted([
         "Casey Jones", "casey", "1", "Software Engineer", "Python", "1",
         "Remote", "1", "48",
+        "n", "n",     # no email alerts, no Google Sheet
         "n",          # do not overwrite
         "casey_two",  # use this id instead
     ])
@@ -618,6 +620,7 @@ def test_run_setup_overwrites_when_told_to(tmp_path):
     ask = scripted([
         "Casey Jones", "casey", "1", "Software Engineer", "Python", "1",
         "Remote", "1", "48",
+        "n", "n",
         "y",
     ])
     path = run_setup(ask, profiles_dir=tmp_path)
@@ -633,7 +636,7 @@ def test_setup_subcommand_writes_a_profile_from_stdin(tmp_path):
     repo = Path(__file__).resolve().parent.parent
     answers = "\n".join([
         "Casey Jones", "casey", "1", "Software Engineer", "Python", "1",
-        "Remote", "1", "48",
+        "Remote", "1", "48", "n", "n",
     ]) + "\n"
     result = subprocess.run(
         [sys.executable, str(repo / "sponsorscan.py"), "setup",
@@ -647,6 +650,83 @@ def test_setup_subcommand_writes_a_profile_from_stdin(tmp_path):
     assert profile["skills"] == {"Python": 7}
     # the wizard tells the user what to run next
     assert "doctor" in result.stdout or "sponsor_daily_report" in result.stdout
+
+
+def test_blank_answers_leave_notifications_off():
+    answers = collect_answers(scripted([""] * 12))
+    profile = build_profile(**answers)
+    assert profile["notifications"] == {
+        "email_enabled": False, "google_sheets_enabled": False}
+
+
+def test_notification_answers_reach_the_profile(tmp_path):
+    from profile_loader import load_profile
+    ask = scripted(["Casey", "casey", "1", "Software Engineer", "Python", "1",
+                    "Remote", "1", "48", "y", "yes"])
+    path = run_setup(ask, profiles_dir=tmp_path)
+    assert load_profile(path)["notifications"] == {
+        "email_enabled": True, "google_sheets_enabled": True}
+
+
+def _guide_profile(email=False, sheets=False):
+    return build_profile(
+        name="Casey", profile_id="casey", work_authorization="opt",
+        target_roles=["Software Engineer"], skills={"Python": 7},
+        preferred_locations=[], max_required_experience=1, report_hours=48,
+        email_enabled=email, google_sheets_enabled=sheets)
+
+
+def test_guide_without_extras_points_at_the_optional_docs():
+    guide = setup_guide(_guide_profile(), "profiles/casey.json")
+    assert "doctor --profile profiles/casey.json" in guide
+    assert "apppasswords" not in guide
+    assert "service account" not in guide
+    assert "docs/EMAIL_SETUP.md" in guide
+
+
+def test_email_guide_explains_the_app_password_and_hides_it():
+    guide = setup_guide(_guide_profile(email=True), "p.json", windows=True)
+    assert "https://myaccount.google.com/apppasswords" in guide
+    assert "https://myaccount.google.com/signinoptions/twosv" in guide
+    assert '$env:GMAIL_APP_PASSWORD = Read-Host' in guide
+    # the profile's own CSV, not the default matches_48h.csv
+    assert '$env:NEW_JOBS_CSV = "casey_new_jobs_48h.csv"' in guide
+    assert "send_job_email.py --check" in guide
+
+
+def test_sheets_guide_walks_through_the_service_account():
+    guide = setup_guide(_guide_profile(sheets=True), "p.json", windows=False)
+    assert "pip install -r requirements-sheets.txt" in guide
+    assert "sheets.googleapis.com" in guide
+    assert "service-account.json" in guide
+    assert "Editor" in guide
+    assert 'export ALL_MATCHES_CSV="casey_matches_48h.csv"' in guide
+    assert "update_google_sheet.py --check" in guide
+    assert "$env:" not in guide
+
+
+def test_sheets_guide_moves_the_key_with_the_users_shell():
+    windows = setup_guide(_guide_profile(sheets=True), "p.json", windows=True)
+    posix = setup_guide(_guide_profile(sheets=True), "p.json", windows=False)
+    assert "Move-Item -Destination service-account.json" in windows
+    assert "mv " not in windows
+    assert 'mv "$(ls -t ~/Downloads/*.json | head -1)"' in posix
+    # the address is read from one field, never by printing the whole key
+    for guide in (windows, posix):
+        assert "['client_email']" in guide
+
+
+def test_posix_guide_reads_the_password_without_echo():
+    guide = setup_guide(_guide_profile(email=True), "p.json", windows=False)
+    assert "read -s" in guide
+    assert "GMAIL_APP_PASSWORD=" not in guide
+
+
+def test_missing_notification_env_names_the_guide():
+    profile = {"notifications": {"email_enabled": True, "google_sheets_enabled": True}}
+    message = warn_notification_env(profile, env={}).message
+    assert "docs/EMAIL_SETUP.md" in message
+    assert "docs/GOOGLE_SHEETS_SETUP.md" in message
 
 
 def test_short_defaults_are_shown_inline():
@@ -943,7 +1023,7 @@ def test_setup_subcommand_prints_the_skill_notice(tmp_path):
     repo = Path(__file__).resolve().parent.parent
     answers = "\n".join([
         "Casey", "casey", "1", "Software Engineer", "Postgres", "1",
-        "Remote", "1", "48",
+        "Remote", "1", "48", "n", "n",
     ]) + "\n"
     result = subprocess.run(
         [sys.executable, str(repo / "sponsorscan.py"), "setup",

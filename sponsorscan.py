@@ -1254,10 +1254,10 @@ def cmd_setup(args):
     except (KeyboardInterrupt, EOFError):
         raise SystemExit("\nCancelled. Nothing was written.")
 
-    print(f"\nWrote {path}")
-    print("\nNext:")
-    print(f"  python sponsorscan.py doctor --profile {path}")
-    print(f"  python sponsor_daily_report.py --profile {path}")
+    from profile_loader import load_profile
+
+    print(f"\nWrote {path}\n")
+    print(onboarding.setup_guide(load_profile(path), path, windows=os.name == "nt"))
 
 
 # ---------------------------------------------------------------------- doctor

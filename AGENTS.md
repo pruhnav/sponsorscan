@@ -126,8 +126,11 @@ The profile sets the output filenames (`output_files` in the JSON). The email
 and Sheets scripts must be pointed at the same names through `NEW_JOBS_CSV` and
 `ALL_MATCHES_CSV`, or they will look for the default `matches_48h.csv`.
 
-Set `notifications.email_enabled` and `notifications.google_sheets_enabled` in
-the profile to match what the user chose, so `doctor` checks them.
+The wizard asks whether the user wants email alerts and a Google Sheet, records
+the answers in `notifications.email_enabled` and
+`notifications.google_sheets_enabled` so `doctor` checks them, and ends by
+printing the browser steps for each extra they chose. If you write the profile
+yourself, pass `email_enabled` and `google_sheets_enabled` to `build_profile`.
 
 ### Stage 3: email alerts (optional)
 

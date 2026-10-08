@@ -24,93 +24,125 @@ step and are unsure it worked.
 
 Do not commit the service-account JSON file or its contents.
 
+SponsorScan writes to the sheet as a **service account**: a robot Google account
+that you create and then share the sheet with, the same way you would share it
+with a person. It is free; no billing account or credit card is needed.
+
+Use a personal Google account. Work and school accounts often block section 5.
+Your profile picture at the top right of each Google page shows which account
+is active; click it to switch.
+
 ## 2. Create a Google Cloud project
 
-Open the Google Cloud Console and create a new project for SponsorScan.
+Open https://console.cloud.google.com/projectcreate
 
-Use a descriptive name such as:
-
-```text
-SponsorScan Automation
-```
-
-Select that project before continuing.
+1. First visit only: tick the Terms of Service box and click **Agree and
+   continue**.
+2. **Project name**: type `SponsorScan`. Leave **Location** as it is.
+3. Click **Create** and wait about 30 seconds. The bell icon at the top right
+   shows when the project is ready.
 
 ## 3. Enable the Google Sheets API
 
-In the Google Cloud project:
+Open https://console.cloud.google.com/apis/library/sheets.googleapis.com
 
-```text
-APIs & Services
-  -> Library
-  -> Google Sheets API
-  -> Enable
-```
+1. At the top left, next to **Google Cloud**, the project picker must say
+   `SponsorScan`. If it shows another project, click it and choose
+   `SponsorScan`. Enabling the API in the wrong project is the most common
+   mistake in this guide.
+2. Click the blue **Enable** button.
+3. It worked when the page shows **API Enabled**, or a **Manage** button in
+   place of Enable.
 
 The uploader only needs the Sheets API unless you later add separate Google
 Drive functionality.
 
 ## 4. Create a service account
 
-In the Google Cloud project:
+Open https://console.cloud.google.com/iam-admin/serviceaccounts
 
-```text
-IAM & Admin
-  -> Service Accounts
-  -> Create Service Account
+1. Check that the project picker says `SponsorScan` again.
+2. Click **+ Create service account** near the top.
+3. **Service account name**: type `sponsorscan`. The **Service account ID**
+   fills itself in.
+4. Click **Create and continue**.
+5. On **Permissions (optional)**, click **Continue** without choosing a role.
+6. On **Principals with access (optional)**, click **Done**.
+7. You are back at the list. The new row's **Email** column shows an address
+   like:
+
+   ```text
+   sponsorscan@your-project-id.iam.gserviceaccount.com
+   ```
+
+   This is the address you share the spreadsheet with in section 6.
+
+## 5. Download the key
+
+1. In the same list, click the service account's email address.
+2. Click the **Keys** tab along the top of its page.
+3. Click **Add key**, then **Create new key**.
+4. Leave **JSON** selected and click **Create**. A `.json` file lands in your
+   Downloads folder.
+
+If Google says **Service account key creation is disabled**, your
+organization's policy (`iam.disableServiceAccountKeyCreation`) blocks keys.
+Start again with a personal Google account.
+
+Right after the download, move the file into the SponsorScan folder as
+`service-account.json`. These commands move the newest `.json` file in
+Downloads, so run them from the SponsorScan folder before downloading anything
+else.
+
+PowerShell:
+
+```powershell
+Get-ChildItem "$HOME\Downloads\*.json" | Sort-Object LastWriteTime | Select-Object -Last 1 | Move-Item -Destination service-account.json
 ```
 
-Use a descriptive name such as:
+macOS or Linux:
 
-```text
-sponsorscan-sheet-bot
+```bash
+mv "$(ls -t ~/Downloads/*.json | head -1)" service-account.json
 ```
 
-After creating the service account, create a JSON key:
+`.gitignore` already excludes that name. Never commit, share or paste the
+file's contents: it works like a password.
 
-```text
-Service Account
-  -> Keys
-  -> Add Key
-  -> Create new key
-  -> JSON
-```
+## 6. Create and share the spreadsheet
 
-Download the JSON file and store it securely.
+Open https://sheets.new
 
-The service-account email will look similar to:
+1. A blank **Untitled spreadsheet** opens. Click that title at the top left to
+   rename it, for example `SponsorScan Jobs`.
+2. Copy the whole URL from the address bar. It looks like:
 
-```text
-sponsorscan-sheet-bot@your-project-id.iam.gserviceaccount.com
-```
+   ```text
+   https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890/edit
+   ```
 
-## 5. Create and share the spreadsheet
+   The uploader accepts the full URL. The ID alone, the part between `/d/` and
+   `/edit`, also works.
 
-Create a Google spreadsheet for SponsorScan.
+3. Print the service account's address. This reads only that one field of the
+   key, run from the SponsorScan folder:
 
-Copy the spreadsheet ID from its URL.
+   ```text
+   python -c "import json;print(json.load(open('service-account.json'))['client_email'])"
+   ```
 
-For a URL like:
+4. In the spreadsheet, click the **Share** button at the top right.
+5. Paste the address into the **Add people, groups** box.
+6. The role dropdown beside it must say **Editor**. Viewer is not enough.
+7. Untick **Notify people**, because the address has no inbox.
+8. Click **Share** (or **Send**).
 
-```text
-https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890/edit
-```
+The service account cannot update the sheet until it has access. To confirm
+everything at once, run the `--check` commands in
+[section 11](#11-test-locally). **Check passed. Nothing was written.** means it
+worked.
 
-the spreadsheet ID is:
-
-```text
-1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
-```
-
-Share the spreadsheet with the service-account email and grant it Editor access.
-Viewer access is not enough. Untick "Notify people", because the address has no
-inbox.
-
-The service account cannot update the sheet until it has access.
-
-The uploader also accepts the full spreadsheet URL in place of the ID.
-
-## 6. Add GitHub Actions secrets
+## 7. Add GitHub Actions secrets
 
 In the repository, open:
 
@@ -132,7 +164,7 @@ Paste the entire JSON object into `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 Do not upload the JSON key file into the repository.
 
-## 7. What the uploader does
+## 8. What the uploader does
 
 `scripts/update_google_sheet.py`:
 
@@ -160,7 +192,7 @@ Numbers are written as numbers so the score columns sort correctly. Every other
 value is written as plain text, so a job title that begins with `=` is never
 run as a formula.
 
-## 8. Add the workflow step
+## 9. Add the workflow step
 
 `workflows/sponsorscan.example.yml` already includes this step. It skips itself
 until both secrets exist:
@@ -197,7 +229,7 @@ opt_new_jobs_48h.csv
 
 Set `ALL_MATCHES_CSV` and `NEW_JOBS_CSV` accordingly.
 
-## 9. Install the client libraries
+## 10. Install the client libraries
 
 They are kept out of `requirements.txt` so a plain install stays small:
 
@@ -205,7 +237,7 @@ They are kept out of `requirements.txt` so a plain install stays small:
 pip install -r requirements-sheets.txt
 ```
 
-## 10. Test locally
+## 11. Test locally
 
 Save the downloaded key in the repository root as `service-account.json`.
 `.gitignore` already excludes that name. `GOOGLE_SERVICE_ACCOUNT_JSON` accepts
@@ -250,7 +282,7 @@ python scripts/update_google_sheet.py
 
 Do not print the service-account JSON in logs.
 
-## 11. Test through GitHub Actions
+## 12. Test through GitHub Actions
 
 Open the repository's Actions tab and manually run the SponsorScan workflow.
 
@@ -264,7 +296,7 @@ Verify:
 - the all-matches tab contains the full report;
 - the new-jobs tab contains only newly discovered jobs.
 
-## 12. Multiple profiles
+## 13. Multiple profiles
 
 Each profile can write to:
 

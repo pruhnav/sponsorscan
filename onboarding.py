@@ -215,16 +215,23 @@ def warn_empty_targeting(profile) -> CheckResult:
 def warn_notification_env(profile, env, modules=SHEETS_MODULES) -> CheckResult:
     """Notifications are enabled in the profile but unconfigured in the shell."""
     notifications = profile.get("notifications") or {}
-    missing = []
+    missing, guides = [], []
     if notifications.get("email_enabled"):
-        missing += [k for k in EMAIL_ENV if not env.get(k)]
+        unset = [k for k in EMAIL_ENV if not env.get(k)]
+        missing += unset
+        if unset:
+            guides.append("docs/EMAIL_SETUP.md")
     if notifications.get("google_sheets_enabled"):
-        missing += [k for k in SHEETS_ENV if not env.get(k)]
+        unset = [k for k in SHEETS_ENV if not env.get(k)]
+        missing += unset
+        if unset:
+            guides.append("docs/GOOGLE_SHEETS_SETUP.md")
 
     if missing:
         return CheckResult(
             "Notification config", "WARN",
-            "Enabled in the profile but unset: " + ", ".join(missing))
+            "Enabled in the profile but unset: " + ", ".join(missing)
+            + ". Setup steps: " + " and ".join(guides))
 
     if notifications.get("google_sheets_enabled") and any(
             importlib.util.find_spec(m) is None for m in modules):
@@ -393,7 +400,8 @@ def skill_weight(answer: str) -> int:
 
 def build_profile(name, profile_id, work_authorization, target_roles, skills,
                   preferred_locations, max_required_experience,
-                  report_hours) -> dict:
+                  report_hours, email_enabled=False,
+                  google_sheets_enabled=False) -> dict:
     """Assemble a complete profile from the wizard's answers.
 
     Pure: no prompting, no filesystem. Every field the wizard does not ask
@@ -415,6 +423,10 @@ def build_profile(name, profile_id, work_authorization, target_roles, skills,
             "all_matches": f"{profile_id}_matches_{hours}h.csv",
             "new_matches": f"{profile_id}_new_jobs_{hours}h.csv",
             "state": f".sponsorscan_{profile_id}_state.json",
+        },
+        "notifications": {
+            "email_enabled": bool(email_enabled),
+            "google_sheets_enabled": bool(google_sheets_enabled),
         },
     })
     return profile
@@ -487,6 +499,15 @@ def collect_answers(ask, notify=None) -> dict:
         asked("Maximum years of experience a posting may require", "1"), 1, int)
     report_hours = _as_number(asked("Report window in hours", "48"), 48, int)
 
+    # Asked here so the profile records the choice and `doctor` checks it.
+    # The browser steps themselves come from setup_guide once the file is saved.
+    email_enabled = _is_yes(asked(
+        "Email you when new jobs appear? Needs a Gmail account; "
+        "the steps are shown at the end (y/N)", "n"))
+    google_sheets_enabled = _is_yes(asked(
+        "Copy results into a Google Sheet? Needs a Google account; "
+        "the steps are shown at the end (y/N)", "n"))
+
     return {
         "name": name,
         "profile_id": profile_id,
@@ -496,7 +517,13 @@ def collect_answers(ask, notify=None) -> dict:
         "preferred_locations": locations,
         "max_required_experience": max_experience,
         "report_hours": report_hours,
+        "email_enabled": email_enabled,
+        "google_sheets_enabled": google_sheets_enabled,
     }
+
+
+def _is_yes(text) -> bool:
+    return (text or "").strip().lower().startswith("y")
 
 
 def save_profile(profile, path) -> Path:
@@ -528,6 +555,199 @@ def run_setup(ask, profiles_dir="profiles", notify=None) -> Path:
             path = profiles_dir / f"{replacement}.json"
 
     return save_profile(build_profile(**answers), path)
+
+
+def _shell_lines(env, windows) -> list[str]:
+    """Set each variable in the user's shell. A None value is a hidden prompt,
+    so a password never lands in the command history."""
+    lines = []
+    for key, value in env:
+        if windows:
+            lines.append(f'$env:{key} = Read-Host "{key}"' if value is None
+                         else f'$env:{key} = "{value}"')
+        else:
+            lines.append(f'read -s -p "{key}: " {key}; echo; export {key}'
+                         if value is None else f'export {key}="{value}"')
+    return lines
+
+
+def _block(lines, indent=7) -> list[str]:
+    return [" " * indent + line for line in lines]
+
+
+def setup_guide(profile, profile_path, windows=False) -> str:
+    """What to do after `setup`, including the browser steps for each extra.
+
+    Pure, like build_profile: the caller decides the shell. The steps are
+    condensed from docs/EMAIL_SETUP.md and docs/GOOGLE_SHEETS_SETUP.md, and the
+    commands carry this profile's own CSV names, because the scripts otherwise
+    look for the default matches_48h.csv.
+    """
+    outputs = profile["output_files"]
+    notifications = profile.get("notifications") or {}
+    out = [
+        "Next steps",
+        "",
+        "Check the setup, then run your first report:",
+        f"       python sponsorscan.py doctor --profile {profile_path}",
+        f"       python sponsor_daily_report.py --profile {profile_path}",
+    ]
+
+    if notifications.get("email_enabled"):
+        out += [
+            "",
+            "Email alerts (full guide: docs/EMAIL_SETUP.md)",
+            "",
+            "Gmail does not accept your normal password from a script. It needs an",
+            "App Password: a separate 16-letter password that only SponsorScan uses.",
+            "",
+            "Before you start: open each link in a browser signed in to the Gmail",
+            "account that will SEND the alerts. Your profile picture at the top",
+            "right of each page shows which account is active; click it to switch.",
+            "",
+            "  1. Turn on 2-Step Verification",
+            "       https://myaccount.google.com/signinoptions/twosv",
+            "     - Google may ask for your password first.",
+            '     - If the page says "2-Step Verification is on", go to step 2.',
+            '     - Otherwise click "Turn on 2-Step Verification" and follow the',
+            "       prompts. Google asks for a phone number and texts it a code.",
+            "",
+            "  2. Create the App Password",
+            "       https://myaccount.google.com/apppasswords",
+            '     - In the "App name" box, type SponsorScan and click Create.',
+            '     - A box titled "Generated app password" shows 16 letters in',
+            "       four groups, like: abcd efgh ijkl mnop",
+            "     - Copy them now. Google never shows them again. If you lose",
+            "       them, delete this one on the same page and create another.",
+            "     - Click Done.",
+            '     - Seeing "The setting you are looking for is not available"?',
+            "       2-Step Verification is still off (go back to step 1), or this",
+            "       is a work or school account. Use a personal Gmail account.",
+            "",
+            "  3. Test the login. Paste the App Password when it is asked for; the",
+            "     spaces do not matter. It stays out of your command history, and",
+            '     nothing is sent yet. "Check passed. Nothing was sent." means it',
+            "     worked. Use your real addresses in place of the examples:",
+            *_block(_shell_lines([
+                ("GMAIL_ADDRESS", "you@gmail.com"),
+                ("GMAIL_APP_PASSWORD", None),
+                ("NOTIFICATION_EMAIL", "where-alerts-go@example.com"),
+            ], windows)),
+            "       python scripts/send_job_email.py --check",
+            "",
+            "  4. After a report, email the new jobs. Nothing is sent when there",
+            "     are none. Check your spam folder the first time.",
+            *_block(_shell_lines([("NEW_JOBS_CSV", outputs["new_matches"])], windows)),
+            "       python scripts/send_job_email.py",
+        ]
+
+    if notifications.get("google_sheets_enabled"):
+        out += [
+            "",
+            "Google Sheet (full guide: docs/GOOGLE_SHEETS_SETUP.md)",
+            "",
+            "SponsorScan writes to the sheet as a service account: a robot Google",
+            "account you create, then share the sheet with. It is free; no",
+            "billing account or credit card is needed.",
+            "",
+            "Before you start: use a personal Google account. Work and school",
+            "accounts often block step 5. Your profile picture at the top right",
+            "of each page shows which account is active; click it to switch.",
+            "",
+            "  1. Install the Google client libraries (in this terminal):",
+            "       pip install -r requirements-sheets.txt",
+            "",
+            "  2. Create a Google Cloud project",
+            "       https://console.cloud.google.com/projectcreate",
+            "     - First visit only: tick the Terms of Service box and click",
+            '       "Agree and continue".',
+            '     - "Project name": type SponsorScan. Leave "Location" as it is.',
+            "     - Click Create and wait about 30 seconds. The bell icon at the",
+            "       top right shows when it is ready.",
+            "",
+            "  3. Turn on the Google Sheets API",
+            "       https://console.cloud.google.com/apis/library/sheets.googleapis.com",
+            '     - Top left, next to "Google Cloud", the project picker must say',
+            "       SponsorScan. If not, click it and choose SponsorScan.",
+            "     - Click the blue Enable button. It worked when the page shows",
+            '       "API Enabled" or a Manage button instead.',
+            "",
+            "  4. Create the service account",
+            "       https://console.cloud.google.com/iam-admin/serviceaccounts",
+            "     - Check the project picker says SponsorScan again.",
+            '     - Click "+ Create service account" near the top.',
+            '     - "Service account name": type sponsorscan. The ID fills in',
+            "       by itself.",
+            '     - Click "Create and continue", then Continue on the',
+            '       "Permissions (optional)" step, then Done. No role is needed.',
+            "     - You are back at the list. The new row's Email column ends in",
+            "       .iam.gserviceaccount.com.",
+            "",
+            "  5. Download its key",
+            "     - In that list, click the service account's email address.",
+            "     - Click the Keys tab along the top of its page.",
+            '     - Click "Add key", then "Create new key". Leave JSON selected',
+            "       and click Create. A .json file lands in your Downloads folder.",
+            '     - Seeing "Service account key creation is disabled"? Your',
+            "       organization blocks keys. Start again with a personal account.",
+            "     Right after the download, this moves the newest .json file in",
+            "     Downloads into this folder as service-account.json:",
+            *_block([
+                'Get-ChildItem "$HOME\\Downloads\\*.json" | Sort-Object LastWriteTime'
+                ' | Select-Object -Last 1 | Move-Item -Destination service-account.json'
+                if windows else
+                'mv "$(ls -t ~/Downloads/*.json | head -1)" service-account.json']),
+            "     Git ignores that name. Never commit, share or paste its contents.",
+            "",
+            "  6. Create the spreadsheet",
+            "       https://sheets.new",
+            '     - A blank "Untitled spreadsheet" opens. Click that title at the',
+            "       top left to rename it, for example SponsorScan Jobs.",
+            "     - Copy the whole URL from the address bar. It looks like",
+            "       https://docs.google.com/spreadsheets/d/1AbC.../edit",
+            "",
+            "  7. Share it with the service account",
+            "     - Print the service account's address (in this terminal):",
+            *_block(["python -c \"import json;print(json.load(open("
+                     "'service-account.json'))['client_email'])\""]),
+            '     - In the spreadsheet, click the Share button at the top right.',
+            '     - Paste the address into the "Add people, groups" box.',
+            "     - The role dropdown beside it must say Editor, not Viewer.",
+            '     - Untick "Notify people"; the address has no inbox.',
+            "     - Click Share (or Send).",
+            "",
+            "  8. Test it. Paste the spreadsheet URL in place of the placeholder.",
+            '     "Check passed. Nothing was written." means it worked; anything',
+            "     else names the step to redo.",
+            *_block(_shell_lines([
+                ("GOOGLE_SERVICE_ACCOUNT_JSON", "service-account.json"),
+                ("GOOGLE_SPREADSHEET_ID", "<paste the spreadsheet URL>"),
+            ], windows)),
+            "       python scripts/update_google_sheet.py --check",
+            "",
+            "  9. After a report, copy the results in:",
+            *_block(_shell_lines([
+                ("ALL_MATCHES_CSV", outputs["all_matches"]),
+                ("NEW_JOBS_CSV", outputs["new_matches"]),
+            ], windows)),
+            "       python scripts/update_google_sheet.py",
+            "     Both tabs are replaced on every run, so keep your own notes,",
+            "     like an applied column, in a separate tab.",
+        ]
+
+    if notifications.get("email_enabled") or notifications.get("google_sheets_enabled"):
+        out += [
+            "",
+            "These settings last only for this terminal window. To run every day",
+            "on GitHub Actions, see docs/REFERENCE.md#github-actions-automation.",
+        ]
+    else:
+        out += [
+            "",
+            "Email alerts and a Google Sheet are optional. Run setup again to add",
+            "them, or see docs/EMAIL_SETUP.md and docs/GOOGLE_SHEETS_SETUP.md.",
+        ]
+    return "\n".join(out)
 
 
 def format_prompt(prompt, default="") -> str:

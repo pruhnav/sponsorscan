@@ -144,7 +144,13 @@ worked.
 
 ## 7. Add GitHub Actions secrets
 
-In the repository, open:
+Skip this section unless SponsorScan will run on a schedule through GitHub
+Actions.
+
+Use your own copy of the repository on GitHub, the one the workflow runs in,
+not `pruhnav/sponsorscan`. **Settings** is the last tab along the top of the
+repository page; on a narrow window it is under the `...` menu at the end of
+the tabs. Only the repository's owner sees it. From there, open:
 
 ```text
 Settings
@@ -158,9 +164,19 @@ Create:
 | Secret | Purpose |
 |---|---|
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Full contents of the downloaded JSON key |
-| `GOOGLE_SPREADSHEET_ID` | Destination spreadsheet ID |
+| `GOOGLE_SPREADSHEET_ID` | The spreadsheet's full URL, or just its ID |
 
-Paste the entire JSON object into `GOOGLE_SERVICE_ACCOUNT_JSON`.
+Paste the entire JSON object into `GOOGLE_SERVICE_ACCOUNT_JSON`. To copy the
+whole key file without opening it, run this in the `sponsorscan` folder, then
+paste into the **Secret** box with `Ctrl+V` (`Cmd+V` on macOS):
+
+```powershell
+Get-Content service-account.json -Raw | Set-Clipboard
+```
+
+```bash
+pbcopy < service-account.json   # macOS
+```
 
 Do not upload the JSON key file into the repository.
 
@@ -327,7 +343,9 @@ that the service account has Editor access.
 
 ### The spreadsheet ID is invalid
 
-Copy only the value between `/d/` and `/edit` in the spreadsheet URL.
+Open the spreadsheet in your browser and copy the whole URL from the address
+bar; the uploader accepts it as is. If you paste only the ID, it is the part
+between `/d/` and `/edit`, with nothing before or after it.
 
 ### The workflow reports invalid JSON
 

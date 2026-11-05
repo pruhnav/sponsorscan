@@ -36,11 +36,21 @@ directly if you want to keep a clean template for future users.
 
 ## 2. Update the profile
 
-Open:
+Open the copy you just made, `profiles/citizen_profile.json`. The `profiles`
+folder is inside the `sponsorscan` folder. Any plain-text editor works; from the
+`sponsorscan` folder, one of these opens it:
 
-```text
-profiles/citizen_profile.json
+```powershell
+notepad profiles\citizen_profile.json
 ```
+
+```bash
+open -e profiles/citizen_profile.json   # macOS, in TextEdit
+```
+
+Keep the quotation marks, commas and braces as they are, and save it as plain
+text with the `.json` name unchanged. `python sponsorscan.py doctor --profile
+profiles/citizen_profile.json` reports a mistake in the file by line.
 
 At minimum, update:
 

@@ -128,6 +128,25 @@ def test_non_us_locations(location):
     assert sdr.is_us_location(location) is False
 
 
+@pytest.mark.parametrize("location, verdict", [
+    ("New York or London", "us"),        # a US option among several
+    ("Bangalore, India; Austin, TX", "us"),
+    ("Paris, TX", "us"),
+    ("San Francisco", "unclear"),        # a city with no state or country
+    ("Seattle", "unclear"),
+    ("Remote", "unclear"),
+    ("Hybrid", "unclear"),
+    ("2 Locations", "unclear"),
+    ("", "unclear"),
+    ("Toronto", "non_us"),
+    ("London, UK", "non_us"),
+    ("Remote - Canada", "non_us"),
+    ("Remote or Oregon-adjacent, EMEA", "non_us"),
+])
+def test_location_verdict(location, verdict):
+    assert sdr.location_verdict(location) == verdict
+
+
 # ------------------------------------------------------------ company tier
 
 @pytest.mark.parametrize("company", ["Fig Inc", "Red", "Scal", "Open"])

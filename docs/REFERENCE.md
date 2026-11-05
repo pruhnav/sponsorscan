@@ -18,6 +18,12 @@ Go to <https://www.dol.gov/agencies/eta/foreign-labor/performance> and download
 the most recent **LCA Programs (H-1B, H-1B1, E-3)** disclosure file. It is an
 `.xlsx` file and is typically 100-400 MB.
 
+The page is long: press `Ctrl+F` (`Cmd+F` on macOS) and search for
+**LCA Programs**. Under that heading, the newest file has the highest fiscal
+year, then the highest quarter, in its name, like
+`LCA_Disclosure_Data_FY2026_Q4.xlsx`. Skip the record-layout PDF next to it. The
+browser saves it to your Downloads folder.
+
 The exact filename changes each quarter. Replace the example filename below with
 the file you downloaded.
 
@@ -473,7 +479,8 @@ The complete process can run on a schedule through GitHub Actions:
 9. Commit the updated state file when it changes.
 
 A scheduled workflow can also include `workflow_dispatch` so it can be tested
-manually from the Actions tab.
+manually: on your repository's GitHub page, open the **Actions** tab, click
+**SponsorScan** in the list on the left, then **Run workflow** on the right.
 
 `workflows/sponsorscan.example.yml` is a starting point rather than a working
 configuration. Copy it to `.github/workflows/`, then fill in the profile path,
@@ -491,6 +498,11 @@ Repository Settings
   -> Secrets and variables
   -> Actions
 ```
+
+This is your own copy of the repository on GitHub, the one the workflow runs
+in, not `pruhnav/sponsorscan`. **Settings** is the last tab along the top of the
+repository page; on a narrow window it is under the `...` menu at the end of
+the tabs. Only the repository's owner sees it.
 
 Never place secret values directly in the workflow YAML.
 
@@ -515,9 +527,30 @@ Repository Settings
   -> LCA_FILE_URL = https://.../LCA_Disclosure_Data_FY2026_Q3.xlsx
 ```
 
-For a public repository, a release asset works. The variable is only used when
-`--latest` fails. Update it when you want a newer quarter; until then the cached
-copy keeps the workflow running.
+The runner downloads the URL without logging in, so it must be public. A GitHub
+release in a **public** repository works. The DOL file is public government
+data, so it is fine to host it in a public repository even when your SponsorScan
+copy is private. In the browser:
+
+1. Open a public repository you own and click **Releases** in the right-hand
+   sidebar, then **Draft a new release**.
+2. Under **Choose a tag**, type a name such as `lca-fy2026-q4` and click
+   **Create new tag**.
+3. Drag the downloaded `.xlsx` onto the **Attach binaries** box, wait for the
+   upload to finish, and click **Publish release**.
+4. Under **Assets** on the published release, right-click the `.xlsx` and copy
+   the link. It looks like
+   `https://github.com/<you>/<repo>/releases/download/lca-fy2026-q4/LCA_Disclosure_Data_FY2026_Q4.xlsx`.
+   That is the value for `LCA_FILE_URL`.
+
+With the GitHub CLI, the same release is one command:
+
+```powershell
+gh release create lca-fy2026-q4 "$HOME\Downloads\LCA_Disclosure_Data_FY2026_Q4.xlsx" --repo <you>/<public-repo> --title "LCA data FY2026 Q4"
+```
+
+The variable is only used when `--latest` fails. Update it when you want a newer
+quarter; until then the cached copy keeps the workflow running.
 
 ## Running the offline checks
 

@@ -768,3 +768,71 @@ def test_ties_in_top_lists_break_alphabetically():
     # as the database it was exported from, whatever order the rows came in.
     assert list(ss._top({"b": 1, "a": 1, "c": 2}, 3)) == ["c", "a", "b"]
     assert list(ss._top({"a": 1, "b": 1, "c": 2}, 3)) == ["c", "a", "b"]
+
+
+# ------------------------------------------------- green card (PERM) filings
+#
+# load-lca recognises a PERM disclosure file by its columns and stores it per
+# quarter beside the LCA filings, with the same combining rules.
+
+def _perm_file(path, rows):
+    """A minimal PERM CSV in the FY2024+ layout: (employer, status, decided)."""
+    import csv
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["CASE_NUMBER", "CASE_STATUS", "DECISION_DATE", "EMP_BUSINESS_NAME",
+                    "JOB_TITLE"])
+        for i, (name, status, decided) in enumerate(rows):
+            w.writerow([f"G-{i}", status, decided, name, "Software Engineer"])
+    return str(path)
+
+
+def _perm(tmp_path, norm="acme"):
+    import sqlite3
+    con = sqlite3.connect(tmp_path / "t.db")
+    row = con.execute("SELECT certified, perm_certified, perm_filed FROM employers "
+                      "WHERE employer_norm = ?", (norm,)).fetchone()
+    con.close()
+    return row
+
+
+def test_perm_file_adds_green_card_counts(monkeypatch, tmp_path):
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    _load(_lca_file(tmp_path / "lca.csv", [(ACME, Q3)] * 2), replace=True)
+    _load(_perm_file(tmp_path / "perm.csv", [
+        (ACME, "Certified", Q3), (ACME, "Certified - Expired", Q2),
+        (ACME, "Denied", Q3), (ACME, "Withdrawn", Q1)]))
+    assert _perm(tmp_path) == (2, 2, 4)
+
+
+def test_perm_only_employer_is_kept(monkeypatch, tmp_path):
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    _load(_lca_file(tmp_path / "lca.csv", [(ACME, Q3)]), replace=True)
+    _load(_perm_file(tmp_path / "perm.csv", [("Globex Inc", "Certified", Q3)]))
+    assert _perm(tmp_path, "globex") == (0, 1, 1)
+
+
+def test_reloading_a_perm_file_changes_nothing_and_keeps_lca(monkeypatch, tmp_path):
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    _load(_lca_file(tmp_path / "lca.csv", [(ACME, Q3)] * 3), replace=True)
+    path = _perm_file(tmp_path / "perm.csv", [(ACME, "Certified", Q3)])
+    _load(path)
+    _load(path)
+    assert _perm(tmp_path) == (3, 1, 1)
+
+
+def test_prebuilt_table_carries_perm_filings(monkeypatch, tmp_path):
+    import argparse
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    _load(_lca_file(tmp_path / "lca.csv", [(ACME, Q3)]), replace=True)
+    _load(_perm_file(tmp_path / "perm.csv", [(ACME, "Certified", Q3)] * 2))
+    out = tmp_path / "release" / "lca.ndjson.gz"
+    out.parent.mkdir()
+    ss.cmd_export_lca(argparse.Namespace(out=str(out)))
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "fresh.db"))
+    _prebuilt(out.with_name("lca.json"), replace=True)
+    import sqlite3
+    con = sqlite3.connect(tmp_path / "fresh.db")
+    assert con.execute("SELECT certified, perm_certified FROM employers "
+                       "WHERE employer_norm = 'acme'").fetchone() == (1, 2)
+    con.close()

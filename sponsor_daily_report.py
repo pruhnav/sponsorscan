@@ -784,7 +784,8 @@ def load_employers(con):
     try:
         have = {r[1] for r in con.execute("PRAGMA table_info(employers)")}
         extra = ", ".join(col if col in have else f"NULL AS {col}"
-                          for col in ("secondary", "new_hires", "first_fy", "last_fy"))
+                          for col in ("secondary", "new_hires", "first_fy", "last_fy",
+                                      "perm_certified"))
         rows = con.execute(
             "SELECT employer_norm, employer_display, certified, denied, withdrawn, "
             f"titles, states, lvl1, lvl2, lvl3, lvl4, {extra} FROM employers"
@@ -808,7 +809,7 @@ def load_employers(con):
             "titles": [str(x).lower() for x in titles],
             "senior_share": ((levels[2] + levels[3]) / level_total) if level_total else None,
             "secondary": row[11], "new_hires": row[12],
-            "first_fy": row[13], "last_fy": row[14],
+            "first_fy": row[13], "last_fy": row[14], "perm_certified": row[15],
         }
     return output
 
@@ -829,6 +830,7 @@ def employer_signals(emp, current_fy):
     `current_fy` is the newest fiscal year loaded.
     """
     blank = {"lca_years": "", "lca_client_site_share": "", "lca_new_hire_share": "",
+             "perm_certified": "",
              "notes": []}
     if not emp:
         return blank
@@ -845,6 +847,12 @@ def employer_signals(emp, current_fy):
                 f"most filings place workers at client sites ({round(share * 100)}%)")
     if filed and emp.get("new_hires") is not None:
         signals["lca_new_hire_share"] = round(emp["new_hires"] / filed, 2)
+    # Green card sponsorship: what keeps a job open past the H-1B years.
+    if emp.get("perm_certified") is not None:
+        signals["perm_certified"] = emp["perm_certified"]
+        if emp["perm_certified"]:
+            signals["notes"].append(
+                f"sponsors green cards ({emp['perm_certified']} PERM certified)")
     # Two fiscal years without a filing, as career-ops counts a stale sponsor.
     if last and current_fy and last <= current_fy - 2:
         signals["notes"].append(f"no filings since FY{last}")
@@ -1025,7 +1033,7 @@ CSV_FIELDS = [
     "matched_resume_skills", "experience_years_detected", "company",
     "title", "location", "posted", "source", "why_ranked", "url",
     "lca_certified", "lca_employer", "lca_years", "lca_client_site_share",
-    "lca_new_hire_share", "job_key",
+    "lca_new_hire_share", "perm_certified", "job_key",
 ]
 
 DROPPED_FIELDS = ["company", "title", "location", "posted", "reason", "source", "url",
@@ -1306,6 +1314,7 @@ def main():
             "lca_years": filing_facts["lca_years"],
             "lca_client_site_share": filing_facts["lca_client_site_share"],
             "lca_new_hire_share": filing_facts["lca_new_hire_share"],
+            "perm_certified": filing_facts["perm_certified"],
             "job_key": key,
             "_posted_ts": parsed_posted.timestamp() if parsed_posted else 0.0,
         })

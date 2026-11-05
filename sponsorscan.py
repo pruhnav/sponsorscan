@@ -98,7 +98,9 @@ CREATE TABLE IF NOT EXISTS employers (
     secondary INTEGER DEFAULT 0,
     new_hires INTEGER DEFAULT 0,
     first_fy INTEGER,
-    last_fy  INTEGER
+    last_fy  INTEGER,
+    perm_certified INTEGER DEFAULT 0,
+    perm_filed     INTEGER DEFAULT 0
 );
 -- Filings per fiscal quarter, by each row's decision date. DOL has published
 -- both ways: FY2025's quarterly files hold one quarter each, while the FY2026
@@ -123,6 +125,22 @@ CREATE TABLE IF NOT EXISTS lca_quarter_employers (
     states TEXT,
     lvl1 INTEGER, lvl2 INTEGER, lvl3 INTEGER, lvl4 INTEGER,
     secondary INTEGER DEFAULT 0, new_hires INTEGER DEFAULT 0,
+    PRIMARY KEY (fiscal_year, quarter, employer_norm)
+);
+-- Green card (PERM) filings, stored per quarter the same way.
+CREATE TABLE IF NOT EXISTS perm_quarters (
+    fiscal_year INTEGER,
+    quarter     INTEGER,
+    source      TEXT,
+    loaded_at   TEXT,
+    PRIMARY KEY (fiscal_year, quarter)
+);
+CREATE TABLE IF NOT EXISTS perm_quarter_employers (
+    fiscal_year      INTEGER,
+    quarter          INTEGER,
+    employer_norm    TEXT,
+    employer_display TEXT,
+    certified INTEGER, denied INTEGER, withdrawn INTEGER,
     PRIMARY KEY (fiscal_year, quarter, employer_norm)
 );
 CREATE TABLE IF NOT EXISTS jobs (
@@ -166,7 +184,8 @@ def connect():
     for col in ("lvl1", "lvl2", "lvl3", "lvl4"):
         if col not in have:
             con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER DEFAULT 0")
-    for col in ("first_fy", "last_fy", "secondary", "new_hires"):
+    for col in ("first_fy", "last_fy", "secondary", "new_hires", "perm_certified",
+                "perm_filed"):
         if col not in have:
             con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER")
     quarter_cols = {r[1] for r in con.execute("PRAGMA table_info(lca_quarter_employers)")}
@@ -258,25 +277,56 @@ def _rebuild_employers(con):
         if fy:
             rec["years"].append(fy)
 
+    # Green card filings. An employer may file these without any LCA in the
+    # quarters loaded, so it gets a row of its own.
+    for norm, display, cert, den, wd in con.execute(
+            "SELECT employer_norm, employer_display, certified, denied, withdrawn "
+            "FROM perm_quarter_employers ORDER BY fiscal_year, quarter"):
+        rec = merged.setdefault(norm, {
+            "display": display, "counts": [0] * 9, "titles": {}, "states": {},
+            "years": []})
+        rec.setdefault("perm", [0, 0])
+        rec["perm"][0] += cert or 0
+        rec["perm"][1] += (cert or 0) + (den or 0) + (wd or 0)
+
     con.execute("DELETE FROM employers")
     con.executemany(
         "INSERT INTO employers (employer_norm, employer_display, certified, denied, "
         "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4, secondary, new_hires, "
-        "first_fy, last_fy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "first_fy, last_fy, perm_certified, perm_filed) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(norm, rec["display"], *rec["counts"][:3],
           json.dumps(list(_top(rec["titles"], 12))),
           json.dumps(list(_top(rec["states"], 8))),
           *rec["counts"][3:9],
           min(rec["years"]) if rec["years"] else None,
-          max(rec["years"]) if rec["years"] else None)
+          max(rec["years"]) if rec["years"] else None,
+          *rec.get("perm", (0, 0)))
          for norm, rec in merged.items()])
     return len(merged)
 
 
-def _resolve_columns(header):
+# A PERM (green card) disclosure file. Since FY2024 the employer column is
+# EMP_BUSINESS_NAME; older files used EMPLOYER_NAME, like the LCA files.
+PERM_WANTED = {
+    "employer": ["EMP_BUSINESS_NAME", "EMPLOYER_NAME"],
+    "status": ["CASE_STATUS"],
+    "decided": ["DECISION_DATE"],
+}
+
+
+def _is_perm(header, src):
+    """True for a PERM file: its own employer column, or an older PERM file
+    that has no LCA visa class and says PERM in its name."""
+    upper = {str(h).strip().upper() for h in header if h is not None}
+    return "EMP_BUSINESS_NAME" in upper or (
+        "VISA_CLASS" not in upper and "PERM" in os.path.basename(src).upper())
+
+
+def _resolve_columns(header, wanted=None):
     idx = {}
     upper = [str(h).strip().upper() if h is not None else "" for h in header]
-    for key, candidates in WANTED.items():
+    for key, candidates in (wanted or WANTED).items():
         for cand in candidates:
             if cand in upper:
                 idx[key] = upper.index(cand)
@@ -347,10 +397,12 @@ def cmd_load_lca(args):
         raise SystemExit("argument --prebuilt: not allowed with --latest or a path. "
                          "Pass one of them.")
     if prebuilt:
-        quarters, meta = _read_prebuilt(prebuilt)
+        by_kind, meta = _read_prebuilt(prebuilt)
         print(f"Prebuilt table built {meta.get('built', '?')}, "
               f"covering {meta.get('quarters', '?')}.")
-        _store_quarters(quarters, f"prebuilt {meta.get('built', '')}".strip(), args.replace)
+        for kind, quarters in by_kind.items():
+            _store_quarters(quarters, f"prebuilt {meta.get('built', '')}".strip(),
+                            args.replace, kind)
         return
     if not args.latest and not args.path:
         raise SystemExit(
@@ -388,6 +440,9 @@ def cmd_load_lca(args):
         header = next(rows)
     except StopIteration:
         raise SystemExit("File is empty.")
+    if _is_perm(header, src):
+        _load_perm(rows, _resolve_columns(header, PERM_WANTED), src, args.replace)
+        return
     idx = _resolve_columns(header)
 
     n = 0
@@ -459,49 +514,97 @@ def cmd_load_lca(args):
     _store_quarters(quarters, os.path.basename(src), args.replace)
 
 
-# Columns of lca_quarter_employers, in order: what export-lca writes and
+def _load_perm(rows, idx, src, replace):
+    """Read a PERM file per quarter, then store it like an LCA file."""
+    agg = {}  # (fiscal_year, quarter) -> employer key -> counts
+    n = 0
+    for row in rows:
+        n += 1
+        if n % 100_000 == 0:
+            print(f"  ...{n:,} rows")
+
+        def get(key, row=row):  # bound now: the row is read on this pass only
+            i = idx.get(key)
+            return row[i] if i is not None and i < len(row) else None
+
+        emp = get("employer")
+        key = norm_employer(emp) if emp else ""
+        if not key:
+            continue
+        quarter = _fiscal_quarter(get("decided")) or (0, 0)
+        rec = agg.setdefault(quarter, {}).setdefault(
+            key, {"display": str(emp).strip(), "counts": [0, 0, 0]})
+        # "Certified - Expired" is a certification the employer did not take to
+        # the next step in time; it still shows the employer sponsors.
+        status = str(get("status") or "").strip().upper()
+        slot = (0 if status.startswith("CERTIFIED") else
+                1 if status.startswith("DENIED") else
+                2 if status.startswith("WITHDRAWN") else None)
+        if slot is not None:
+            rec["counts"][slot] += 1
+    print(f"Read {n:,} rows of green card (PERM) filings.")
+    quarters = {fyq: [(key, rec["display"], *rec["counts"]) for key, rec in emps.items()]
+                for fyq, emps in agg.items()}
+    _store_quarters(quarters, os.path.basename(src), replace, "perm")
+
+
+# Columns of each kind's per-quarter table, in order: what export-lca writes and
 # load-lca --prebuilt reads back.
 _QUARTER_COLUMNS = ("fiscal_year", "quarter", "employer_norm", "employer_display",
                     "certified", "denied", "withdrawn", "titles", "states",
                     "lvl1", "lvl2", "lvl3", "lvl4", "secondary", "new_hires")
+_PERM_COLUMNS = ("fiscal_year", "quarter", "employer_norm", "employer_display",
+                 "certified", "denied", "withdrawn")
+_KIND_COLUMNS = {"lca": _QUARTER_COLUMNS, "perm": _PERM_COLUMNS}
 
 
-def _store_quarters(quarters, source, replace):
-    """Replace the given quarters in the database, then rebuild `employers`.
+def _store_quarters(quarters, source, replace, kind="lca"):
+    """Replace the given quarters of one kind of filing, then rebuild `employers`.
 
-    `quarters` maps (fiscal_year, quarter) to rows of lca_quarter_employers
-    without their first two columns. Called only once a whole file has been
+    `kind` is "lca" or "perm". `quarters` maps (fiscal_year, quarter) to rows
+    of that kind's per-quarter table without their first two columns.
+    `replace` clears that kind only. Called only once a whole file has been
     read and checked, so a failed read leaves the database as it was.
     """
+    columns = _KIND_COLUMNS[kind]
+    table, loads = f"{kind}_quarter_employers", f"{kind}_quarters"
     con = connect()
     loaded = con.execute("SELECT COUNT(*) FROM lca_quarters").fetchone()[0]
     # Employers loaded before quarters were tracked cannot be combined with others.
     legacy = not loaded and con.execute("SELECT COUNT(*) FROM employers").fetchone()[0]
+    if legacy and kind == "perm":
+        con.close()
+        raise SystemExit("The LCA data in this database predates multi-year loading, "
+                         "so green card filings cannot be added to it. Load the LCA "
+                         "files again first (or `load-lca --prebuilt --replace`).")
     if replace or legacy:
         if legacy and not replace:
             print("The employer data already loaded predates multi-year loading, so "
                   "this file replaces it. Load your other files again to combine them.")
-        for table in ("employers", "lca_quarters", "lca_quarter_employers"):
-            con.execute(f"DELETE FROM {table}")
+        for name in (table, loads) + (("employers",) if legacy else ()):
+            con.execute(f"DELETE FROM {name}")
 
-    placeholders = ",".join("?" * len(_QUARTER_COLUMNS))
+    placeholders = ",".join("?" * len(columns))
     for (fiscal_year, quarter), rows in quarters.items():
-        con.execute("DELETE FROM lca_quarter_employers WHERE fiscal_year = ? "
-                    "AND quarter = ?", (fiscal_year, quarter))
+        con.execute(f"DELETE FROM {table} WHERE fiscal_year = ? AND quarter = ?",
+                    (fiscal_year, quarter))
         con.executemany(
-            f"INSERT INTO lca_quarter_employers ({', '.join(_QUARTER_COLUMNS)}) "
-            f"VALUES ({placeholders})",
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
             [(fiscal_year, quarter, *row) for row in rows])
-        con.execute("INSERT OR REPLACE INTO lca_quarters VALUES (?, ?, ?, ?)",
+        con.execute(f"INSERT OR REPLACE INTO {loads} VALUES (?, ?, ?, ?)",
                     (fiscal_year, quarter, source, time.strftime("%Y-%m-%d %H:%M")))
     total = _rebuild_employers(con)
     held = _describe_quarters(con.execute(
         "SELECT fiscal_year, quarter FROM lca_quarters WHERE fiscal_year > 0"))
+    green = _describe_quarters(con.execute(
+        "SELECT fiscal_year, quarter FROM perm_quarters WHERE fiscal_year > 0"))
     con.commit()
     con.close()
     this = _describe_quarters(q for q in quarters if q[0]) or "a file with no decision dates"
-    print(f"Loaded {this}. {DB_PATH} now holds {total:,} employers"
-          f"{', from ' + held if held else ''}.")
+    what = "green card filings for " if kind == "perm" else ""
+    print(f"Loaded {what}{this}. {DB_PATH} now holds {total:,} employers"
+          f"{', from ' + held if held else ''}"
+          f"{'; green card filings from ' + green if green else ''}.")
 
 
 # ----------------------------------------------------------- prebuilt table
@@ -539,40 +642,48 @@ def _read_prebuilt(pointer):
         raise SystemExit("The prebuilt table's checksum does not match its pointer "
                          f"({pointer}), so the download is incomplete or altered. "
                          "Nothing was changed. Try again, or load a DOL file instead.")
-    quarters = {}
+    by_kind = {}  # "lca" or "perm" -> (fiscal_year, quarter) -> rows
     for line in gzip.decompress(data).decode("utf-8").splitlines():
         row = json.loads(line)
-        for field in ("titles", "states"):
-            row[field] = json.dumps(row[field])
-        quarters.setdefault((row["fiscal_year"], row["quarter"]), []).append(
-            tuple(row[c] for c in _QUARTER_COLUMNS[2:]))
-    return quarters, meta
+        kind = row.get("kind", "lca")  # tables built before PERM had no kind
+        if kind == "lca":
+            for field in ("titles", "states"):
+                row[field] = json.dumps(row[field])
+        by_kind.setdefault(kind, {}).setdefault(
+            (row["fiscal_year"], row["quarter"]), []).append(
+            tuple(row[c] for c in _KIND_COLUMNS[kind][2:]))
+    return by_kind, meta
 
 
 def cmd_export_lca(args):
     """Write the per-quarter table and its pointer, ready to publish."""
     con = connect()
-    rows = con.execute(f"SELECT {', '.join(_QUARTER_COLUMNS)} FROM lca_quarter_employers "
-                       "ORDER BY fiscal_year, quarter, employer_norm").fetchall()
+    lines = []
+    for kind, columns in _KIND_COLUMNS.items():
+        for row in con.execute(
+                f"SELECT {', '.join(columns)} FROM {kind}_quarter_employers "
+                "ORDER BY fiscal_year, quarter, employer_norm"):
+            record = dict(zip(columns, row), kind=kind)
+            if kind == "lca":
+                for field in ("titles", "states"):
+                    record[field] = json.loads(record[field] or "{}")
+            lines.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
     held = _describe_quarters(con.execute(
         "SELECT fiscal_year, quarter FROM lca_quarters WHERE fiscal_year > 0"))
+    green = _describe_quarters(con.execute(
+        "SELECT fiscal_year, quarter FROM perm_quarters WHERE fiscal_year > 0"))
     employers = con.execute("SELECT COUNT(*) FROM employers").fetchone()[0]
     con.close()
-    if not rows:
+    if not lines:
         raise SystemExit("Nothing to export. Load DOL files with `load-lca` first.")
-    lines = []
-    for row in rows:
-        record = dict(zip(_QUARTER_COLUMNS, row))
-        for field in ("titles", "states"):
-            record[field] = json.loads(record[field] or "{}")
-        lines.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
     # mtime=0, so the same table always compresses to the same bytes.
     data = gzip.compress(("\n".join(lines) + "\n").encode("utf-8"), mtime=0)
     out = Path(args.out)
     out.write_bytes(data)
-    meta = {"format": "sponsorscan-lca", "version": 1, "file": out.name,
+    # Version 2 adds green card (PERM) rows, each tagged with its kind.
+    meta = {"format": "sponsorscan-lca", "version": 2, "file": out.name,
             "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
-            "quarters": held, "employers": employers,
+            "quarters": held, "perm_quarters": green, "employers": employers,
             "built": time.strftime("%Y-%m-%d")}
     pointer = out.with_name("lca.json")
     pointer.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")

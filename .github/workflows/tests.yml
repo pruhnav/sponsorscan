@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Nothing here writes to the repository, so the token stays read-only.
+permissions:
+  contents: read
+
+# A new push to the same PR replaces the run in progress instead of queueing
+# behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      # One platform failing must not cancel the others: a failure on a single
+      # OS is exactly what the matrix is here to show.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.12"]
+        include:
+          # The oldest Python the code runs on (onboarding.py uses `X | None`
+          # annotations, which need 3.10).
+          - os: ubuntu-latest
+            python: "3.10"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      # Both suites are offline by design; a test that reaches the network is a
+      # bug in the test.
+      - run: python -m pytest tests -q
+      - run: python selftest.py

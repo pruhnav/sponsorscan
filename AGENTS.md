@@ -228,3 +228,6 @@ the user should `git pull` before making local changes.
   real failure, with the reason on stderr. Workflows depend on that.
 - Tests must not touch the network. The Sheets tests use a fake client; follow
   that pattern.
+- Pull requests follow `CONTRIBUTING.md`: one change per PR, a
+  `type(scope): summary` title, and every section of the template filled in.
+  PRs are squash-merged, so the title and body become the commit on `main`.

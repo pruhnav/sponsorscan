@@ -22,11 +22,6 @@ It joins two sources that cannot go stale on someone else's schedule:
 - **Public ATS job board APIs** (Greenhouse, Lever, Ashby, Workday). Served straight from
   the employer, no aggregator in between.
 
-Curated college job lists such as
-[SpeedyApply's](https://github.com/speedyapply/2027-SWE-College-Jobs) can be
-followed too, to reach employers with no board listed. Their postings carry no
-description, so they are ranked on the title alone.
-
 The core workflow is:
 
 1. Load the latest LCA disclosure data.
@@ -44,7 +39,26 @@ coverage than the boards that ship in `companies.yaml`.
 
 ## Install
 
-Clone the repository and create a virtual environment.
+### Before you start
+
+You need three things:
+
+- **Python 3.10 or newer.** Download it from <https://www.python.org/downloads/>.
+  On Windows, tick **Add python.exe to PATH** on the installer's first screen.
+  To check, run `python --version` (on macOS, `python3 --version`).
+- **Git.** Download it from <https://git-scm.com/downloads>. If you'd rather not
+  install it, open this repository on GitHub, click the green **Code** button,
+  choose **Download ZIP**, unzip it, and skip the `git clone` line below.
+- **A terminal**, where every command below is typed. On Windows, open the Start
+  menu and type **PowerShell**. On macOS, open **Terminal** from Applications >
+  Utilities.
+
+`git clone` creates a `sponsorscan` folder inside whichever folder the terminal
+is in. A new terminal starts in your user folder, so it ends up at
+`C:\Users\<you>\sponsorscan` on Windows or `~/sponsorscan` on macOS. Every
+command runs from that folder, and that is where the CSVs land.
+
+Then clone the repository and create a virtual environment.
 
 ### Windows PowerShell
 
@@ -65,10 +79,13 @@ you open a new terminal later, return to the repository and activate the
 environment again:
 
 ```powershell
-cd "C:\path\to\sponsorscan"
+cd "$HOME\sponsorscan"
 Set-ExecutionPolicy -Scope Process Bypass
 .\.venv\Scripts\Activate.ps1
 ```
+
+If you cloned somewhere else, `cd` to that folder instead. When the environment
+is active, the prompt starts with `(.venv)`.
 
 ### macOS and Linux
 
@@ -102,8 +119,15 @@ python sponsorscan.py load-lca --latest --replace
 ```
 
 That resolves the newest file from the DOL site and downloads it. If the DOL
-changes their page and the lookup fails, it tells you exactly what to download
-by hand, then:
+blocks the download or changes its page, download the file in a browser instead:
+
+1. Open <https://www.dol.gov/agencies/eta/foreign-labor/performance>.
+2. The page is long. Press `Ctrl+F` (`Cmd+F` on macOS) and search for
+   **LCA Programs**.
+3. Under that heading, click the newest disclosure file: the highest fiscal
+   year, then the highest quarter, named like `LCA_Disclosure_Data_FY2026_Q4.xlsx`.
+   Skip the record-layout PDF beside it.
+4. It saves to your Downloads folder. Load it with the file's real name:
 
 ```powershell
 python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2026_Q2.xlsx" --replace
@@ -132,8 +156,9 @@ works immediately. There is no list to build first.
 python sponsorscan.py report --out matches.csv
 ```
 
-The CSV lands in the current folder. It opens directly in Excel, or imports into
-Google Sheets.
+The CSV lands in the `sponsorscan` folder your terminal is in. Open it with
+`start matches.csv` on Windows or `open matches.csv` on macOS, or double-click
+it in File Explorer or Finder. It opens in Excel, Numbers or Google Sheets.
 
 ### Optional: widen the company list
 
@@ -159,12 +184,18 @@ Asks a handful of questions - work authorization, target roles, skills,
 locations - and writes a profile for you, instead of leaving you to hand-edit
 25 JSON fields. You type your skills in; there is no resume file to upload. The
 wizard shows which skill names the scorer recognises and flags any it will only
-match literally. Then run the personalized report, which adds eligibility
+match literally. It saves your profile in the `profiles` folder inside
+`sponsorscan`, named after the profile ID you chose, and ends by printing the
+exact command for the personalized report. That report adds eligibility
 filtering and ranking weighted by the skills you listed:
 
 ```powershell
 python sponsor_daily_report.py --profile profiles/yours.json
 ```
+
+Replace `yours` with your profile ID. The report writes two CSVs to the
+`sponsorscan` folder, `<profile id>_matches_48h.csv` and
+`<profile id>_new_jobs_48h.csv`.
 
 ### Something not working?
 

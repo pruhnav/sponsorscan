@@ -18,6 +18,12 @@ Go to <https://www.dol.gov/agencies/eta/foreign-labor/performance> and download
 the most recent **LCA Programs (H-1B, H-1B1, E-3)** disclosure file. It is an
 `.xlsx` file and is typically 100-400 MB.
 
+The page is long: press `Ctrl+F` (`Cmd+F` on macOS) and search for
+**LCA Programs**. Under that heading, the newest file has the highest fiscal
+year, then the highest quarter, in its name, like
+`LCA_Disclosure_Data_FY2026_Q4.xlsx`. Skip the record-layout PDF next to it. The
+browser saves it to your Downloads folder.
+
 The exact filename changes each quarter. Replace the example filename below with
 the file you downloaded.
 
@@ -129,34 +135,6 @@ seconds.
 | Flag | Effect |
 |---|---|
 | `--workday-days 5` | Open Workday postings up to 5 days old. Raise it when running the report with `--hours` above 48, or older postings will be missing |
-
-### Curated lists
-
-The `feeds:` section of `companies.yaml` follows curated job lists that name
-many employers each, so postings at companies with no board listed still reach
-the report. It ships following SpeedyApply's
-[2027 SWE College Jobs](https://github.com/speedyapply/2027-SWE-College-Jobs),
-whose tables are regenerated daily:
-
-```yaml
-feeds:
-  speedyapply:
-    - speedyapply/2027-SWE-College-Jobs/README.md        # USA internships
-    - speedyapply/2027-SWE-College-Jobs/NEW_GRAD_USA.md  # USA new grad roles
-```
-
-Each entry is `owner/repo/path` of a markdown file on GitHub, read in SpeedyApply's
-table format. Delete a line to stop following that list. Feeds run after the
-boards, and a posting is skipped when its company's own board was fetched or its
-URL is already stored, since the board's copy carries the description.
-
-A list row has no description, only company, title, location and an age in days.
-So a feed posting is scored on its title alone, and the citizenship, clearance,
-degree and experience checks cannot see the requirements in its body. Open the
-posting before applying. Its posted date is accurate to the day.
-
-New employers appear on a list all the time, so a feed posting at a company the
-report has not seen before is reported as new rather than silently baselined.
 
 ## 4. Generate the standard report
 
@@ -356,6 +334,21 @@ reports for more than one person.
 | `--include-non-us` | Keep postings outside the United States |
 | `--include-unknown-posted` | Keep postings whose ATS supplies no usable date |
 | `--reset-state` | Treat every current match as new |
+| `--dropped-out dropped.csv` | Where to write the dropped jobs; by default the `--out` name with `_dropped` added |
+
+Every job a rule drops is written to a third CSV beside the matches, such as
+`yourid_matches_48h_dropped.csv`, with a `reason` column. A work-authorization
+drop names the rule and quotes the words that triggered it, for example
+`U.S. citizenship required: "must be a US citizen"`. If a job you would want
+shows up there, the reason says which rule to look at. Postings outside the
+time window, and titles outside your target roles, are not listed: they are not
+judgments about the job, and there are far more of them.
+
+A posting is dropped as outside the US only when its location names somewhere
+else and nowhere in the US. One listing several places counts as US if any of
+them is, so "New York or London" is kept. A location that names no state or
+country, such as "San Francisco", "Remote" or "2 Locations", is kept and marked
+"location unclear" in `why_ranked`; open the posting to check it is in the US.
 
 Employer matching uses the same lookup as `report`. Among the DOL names that
 match a company equally well, the one with the most certified LCAs wins, so
@@ -473,7 +466,8 @@ The complete process can run on a schedule through GitHub Actions:
 9. Commit the updated state file when it changes.
 
 A scheduled workflow can also include `workflow_dispatch` so it can be tested
-manually from the Actions tab.
+manually: on your repository's GitHub page, open the **Actions** tab, click
+**SponsorScan** in the list on the left, then **Run workflow** on the right.
 
 `workflows/sponsorscan.example.yml` is a starting point rather than a working
 configuration. Copy it to `.github/workflows/`, then fill in the profile path,
@@ -491,6 +485,11 @@ Repository Settings
   -> Secrets and variables
   -> Actions
 ```
+
+This is your own copy of the repository on GitHub, the one the workflow runs
+in, not `pruhnav/sponsorscan`. **Settings** is the last tab along the top of the
+repository page; on a narrow window it is under the `...` menu at the end of
+the tabs. Only the repository's owner sees it.
 
 Never place secret values directly in the workflow YAML.
 
@@ -515,9 +514,30 @@ Repository Settings
   -> LCA_FILE_URL = https://.../LCA_Disclosure_Data_FY2026_Q3.xlsx
 ```
 
-For a public repository, a release asset works. The variable is only used when
-`--latest` fails. Update it when you want a newer quarter; until then the cached
-copy keeps the workflow running.
+The runner downloads the URL without logging in, so it must be public. A GitHub
+release in a **public** repository works. The DOL file is public government
+data, so it is fine to host it in a public repository even when your SponsorScan
+copy is private. In the browser:
+
+1. Open a public repository you own and click **Releases** in the right-hand
+   sidebar, then **Draft a new release**.
+2. Under **Choose a tag**, type a name such as `lca-fy2026-q4` and click
+   **Create new tag**.
+3. Drag the downloaded `.xlsx` onto the **Attach binaries** box, wait for the
+   upload to finish, and click **Publish release**.
+4. Under **Assets** on the published release, right-click the `.xlsx` and copy
+   the link. It looks like
+   `https://github.com/<you>/<repo>/releases/download/lca-fy2026-q4/LCA_Disclosure_Data_FY2026_Q4.xlsx`.
+   That is the value for `LCA_FILE_URL`.
+
+With the GitHub CLI, the same release is one command:
+
+```powershell
+gh release create lca-fy2026-q4 "$HOME\Downloads\LCA_Disclosure_Data_FY2026_Q4.xlsx" --repo <you>/<public-repo> --title "LCA data FY2026 Q4"
+```
+
+The variable is only used when `--latest` fails. Update it when you want a newer
+quarter; until then the cached copy keeps the workflow running.
 
 ## Running the offline checks
 

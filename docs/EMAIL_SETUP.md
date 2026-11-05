@@ -67,7 +67,13 @@ worked.
 
 ## 3. Add GitHub Actions secrets
 
-In the repository, open:
+Skip this section unless SponsorScan will run on a schedule through GitHub
+Actions.
+
+Use your own copy of the repository on GitHub, the one the workflow runs in,
+not `pruhnav/sponsorscan`. **Settings** is the last tab along the top of the
+repository page; on a narrow window it is under the `...` menu at the end of
+the tabs. Only the repository's owner sees it. From there, open:
 
 ```text
 Settings
@@ -75,6 +81,10 @@ Settings
   -> Actions
   -> New repository secret
 ```
+
+Each secret is a **Name** and a **Secret** box. Type the name exactly as shown
+below, paste the value, and click **Add secret**; then **New repository
+secret** again for the next one.
 
 Create these secrets:
 

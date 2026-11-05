@@ -761,3 +761,10 @@ def test_prebuilt_table_combines_with_a_dol_file(monkeypatch, tmp_path):
     assert con.execute("SELECT certified, first_fy, last_fy FROM employers "
                        "WHERE employer_norm = 'acme'").fetchone() == (6, 2025, 2026)
     con.close()
+
+
+def test_ties_in_top_lists_break_alphabetically():
+    # So a table rebuilt from the prebuilt file lists titles in the same order
+    # as the database it was exported from, whatever order the rows came in.
+    assert list(ss._top({"b": 1, "a": 1, "c": 2}, 3)) == ["c", "a", "b"]
+    assert list(ss._top({"a": 1, "b": 1, "c": 2}, 3)) == ["c", "a", "b"]

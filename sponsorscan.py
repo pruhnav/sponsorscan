@@ -233,7 +233,9 @@ def _fiscal_quarter(value):
 
 
 def _top(counts, n):
-    return dict(sorted(counts.items(), key=lambda kv: -kv[1])[:n])
+    """The n most frequent entries; ties break alphabetically, so the result
+    does not depend on the order the counts were gathered in."""
+    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n])
 
 
 def _rebuild_employers(con):

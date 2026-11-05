@@ -719,7 +719,6 @@ def load_employers(con):
     for row in rows:
         levels = [row[7] or 0, row[8] or 0, row[9] or 0, row[10] or 0]
         level_total = sum(levels)
-        case_total = (row[2] or 0) + (row[3] or 0) + (row[4] or 0)
         try:
             titles = json.loads(row[5] or "[]")
         except json.JSONDecodeError:
@@ -730,7 +729,6 @@ def load_employers(con):
             "certified": row[2] or 0,
             "titles": [str(x).lower() for x in titles],
             "senior_share": ((levels[2] + levels[3]) / level_total) if level_total else None,
-            "trouble_rate": (((row[3] or 0) + (row[4] or 0)) / case_total) if case_total else None,
         }
     return output
 
@@ -771,9 +769,11 @@ def sponsorship_score(emp, title, blob, fuzzy_confidence=100, profile=None):
             score += 10
             signals.append("historical LCA title overlap")
 
-        if emp["trouble_rate"] is not None and emp["trouble_rate"] >= 0.25:
-            score -= 8
-            signals.append("higher denied/withdrawn share")
+        # Denied and withdrawn filings do not count against an employer. A
+        # withdrawal is usually the candidate taking another offer or the role
+        # closing, and large sponsors withdraw certified LCAs routinely; a
+        # denial is the government's decision. Neither says the employer will
+        # not sponsor, which is the only question this score answers.
 
     if any(p.search(blob) for p in SPONSOR_POS_RE):
         score += 12

@@ -1205,9 +1205,9 @@ def cmd_report(args):
             if emp["senior_share"] is not None and emp["senior_share"] >= 0.5:
                 score += 10
                 why.append(f"{int(emp['senior_share']*100)}% filed at wage level III/IV")
-            if emp["trouble_rate"] is not None and emp["trouble_rate"] >= 0.25:
-                score -= 10
-                why.append(f"{int(emp['trouble_rate']*100)}% denied or withdrawn")
+            # Denied and withdrawn filings are reported in their own column
+            # but never lower the score: see sponsorship_score in
+            # sponsor_daily_report.py for why.
             tl = (title or "").lower()
             if any(any(w in t for w in tl.split() if len(w) > 4) for t in emp["titles"]):
                 score += 15

@@ -711,7 +711,7 @@ def test_email_guide_explains_the_app_password_and_hides_it():
     assert "https://myaccount.google.com/signinoptions/twosv" in guide
     assert '$env:GMAIL_APP_PASSWORD = Read-Host' in guide
     # the profile's own CSV, not the default matches_48h.csv
-    assert '$env:NEW_JOBS_CSV = "casey_new_jobs_48h.csv"' in guide
+    assert "$env:NEW_JOBS_CSV = 'casey_new_jobs_48h.csv'" in guide
     assert "send_job_email.py --check" in guide
 
 
@@ -721,20 +721,52 @@ def test_sheets_guide_walks_through_the_service_account():
     assert "sheets.googleapis.com" in guide
     assert "service-account.json" in guide
     assert "Editor" in guide
-    assert 'export ALL_MATCHES_CSV="casey_matches_48h.csv"' in guide
+    assert 'export ALL_MATCHES_CSV=casey_matches_48h.csv' in guide
     assert "update_google_sheet.py --check" in guide
     assert "$env:" not in guide
 
 
-def test_sheets_guide_moves_the_key_with_the_users_shell():
+def test_sheets_guide_leaves_key_selection_to_the_user():
     windows = setup_guide(_guide_profile(sheets=True), "p.json", windows=True)
     posix = setup_guide(_guide_profile(sheets=True), "p.json", windows=False)
-    assert "Move-Item -Destination service-account.json" in windows
-    assert "mv " not in windows
-    assert 'mv "$(ls -t ~/Downloads/*.json | head -1)"' in posix
     # the address is read from one field, never by printing the whole key
     for guide in (windows, posix):
+        assert "Move the key file you just downloaded into the repository root" in guide
+        assert "Move-Item" not in guide
+        assert "mv " not in guide
+        assert "Downloads/*.json" not in guide
         assert "['client_email']" in guide
+
+
+def test_setup_guide_quotes_paths_and_output_names_as_shell_literals():
+    import shlex
+
+    profile = _guide_profile(email=True, sheets=True)
+    path = "profiles/Casey's $(Write-Output unsafe) `note`.json"
+    filename = "Casey's $(touch unsafe) `note`.csv"
+    profile["output_files"]["new_matches"] = filename
+    posix = setup_guide(profile, path, windows=False)
+    windows = setup_guide(profile, path, windows=True)
+    assert f"doctor --profile {shlex.quote(path)}" in posix
+    assert f"export NEW_JOBS_CSV={shlex.quote(filename)}" in posix
+    assert "doctor --profile 'profiles/Casey''s $(Write-Output unsafe) `note`.json'" in windows
+    assert "$env:NEW_JOBS_CSV = 'Casey''s $(touch unsafe) `note`.csv'" in windows
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_setup_guide_passes_custom_database_only_to_doctor_and_report(windows):
+    import shlex
+
+    database = "local data/Casey's $(echo unsafe) `jobs`.db"
+    quoted = "'" + database.replace("'", "''") + "'" if windows else shlex.quote(database)
+    profile = _guide_profile(email=True, sheets=True)
+    guide = setup_guide(profile, "profile.json", windows=windows, db_path=database)
+    lines = [line.strip() for line in guide.splitlines() if " --db " in line]
+    assert len(lines) == 2
+    assert lines[0].startswith("python sponsorscan.py doctor --profile ")
+    assert lines[1].startswith("python sponsor_daily_report.py --profile ")
+    assert all(line.endswith(f" --db {quoted}") for line in lines)
+    assert " --db " not in setup_guide(profile, "profile.json", windows=windows)
 
 
 def test_posix_guide_reads_the_password_without_echo():

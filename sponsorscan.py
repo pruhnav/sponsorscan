@@ -1703,6 +1703,23 @@ def main():
                      help="Database to inspect; defaults to SPONSORSCAN_DB or ./sponsorscan.db")
     doc.set_defaults(func=cmd_doctor)
 
+    dashboard = sub.add_parser("dashboard", help="Open your local job and application dashboard")
+    dashboard.add_argument("--profile", default=None,
+                           help="Existing profile; otherwise use the local onboarding screen")
+    dashboard.add_argument("--db", default=None, help="Existing job database")
+    dashboard.add_argument("--companies", default="companies.yaml")
+    dashboard.add_argument("--workspace", default=".sponsorscan-dashboard",
+                           help="Private folder for dashboard profile and application history")
+    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument("--no-browser", action="store_true",
+                           help="Print the URL without opening the browser")
+
+    def open_dashboard(args):
+        from local_dashboard import run_dashboard
+        run_dashboard(args)
+
+    dashboard.set_defaults(func=open_dashboard)
+
     args = p.parse_args()
     args.func(args)
 

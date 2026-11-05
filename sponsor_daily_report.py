@@ -1071,56 +1071,54 @@ def build_parser():
     return parser
 
 
-def main():
-    args = build_parser().parse_args()
+def generate_report(profile=None, db_path=None, hours=None, min_score=None,
+                    include_unknown_posted=False):
+    """Return ranked matches without changing reports or notification state.
 
-    profile = None
-    if args.profile:
-        try:
-            profile = load_profile(args.profile)
-        except ProfileError as exc:
-            raise SystemExit(f"Invalid profile: {exc}")
-        print(f"Loaded profile: {describe_profile(profile)}")
-        for warning in authorization_warnings(profile):
-            print(f"  warning: {warning}")
+    ``profile`` is a validated profile dictionary, as returned by load_profile.
+    The database is opened read-only. The result contains ``matches``, ``dropped``,
+    ``counts`` and JSON-safe ``metadata``. Alert novelty is deliberately unknown:
+    ``is_new_since_last_run`` is empty because browsing is not a notification run.
+    Missing databases raise FileNotFoundError; invalid input/schema raises
+    ValueError. SQLite errors propagate to callers for actionable UI handling.
+    """
+    db_path = Path(db_path) if db_path is not None else DB_PATH
+    if not db_path.is_file():
+        raise FileNotFoundError(
+            f"Could not find {db_path}. Run `sponsorscan.py fetch-jobs` first.")
+    hours = hours if hours is not None else (profile or {}).get("report_hours", 48)
+    min_score = min_score if min_score is not None else \
+        (profile or {}).get("minimum_score", 95)
+    if not isinstance(hours, (int, float)) or not 0 < hours < float("inf"):
+        raise ValueError("Report hours must be a finite number greater than 0.")
+    args = argparse.Namespace(hours=hours, min_score=min_score, fuzzy_cutoff=90,
+                              include_non_us=False,
+                              include_unknown_posted=include_unknown_posted)
+    report = _generate_report(profile, db_path, args)
+    for row in report["matches"]:
+        row["is_new_since_last_run"] = ""
+    return {key: report[key] for key in ("matches", "dropped", "counts", "metadata")}
 
-    output_config = (profile or {}).get("output_files", {})
-    args.out = args.out or output_config.get("all_matches") or "matches_48h.csv"
-    args.new_out = args.new_out or output_config.get("new_matches") or "new_jobs_48h.csv"
-    args.state = args.state or output_config.get("state") or str(DEFAULT_STATE)
-    # Beside the matches file unless named: "x_matches_48h.csv" gives
-    # "x_matches_48h_dropped.csv".
-    out_path = Path(args.out)
-    args.dropped_out = args.dropped_out or output_config.get("dropped") or str(
-        out_path.with_name(f"{out_path.stem}_dropped{out_path.suffix}"))
-    if args.min_score is None:
-        args.min_score = (profile or {}).get("minimum_score", 95)
-    if args.hours is None:
-        args.hours = (profile or {}).get("report_hours", 48)
 
-    if args.hours <= 0:
-        raise SystemExit("--hours must be greater than 0.")
-
-    db_path = Path(args.db) if args.db else DB_PATH
-    if not db_path.exists():
-        raise SystemExit(f"Could not find {db_path}. Run `sponsorscan.py fetch-jobs` first.")
-
+def _generate_report(profile, db_path, args, seen=None, tracked_companies=None,
+                     url_keyed=False):
+    """Shared read-only ranking engine for the CLI and local dashboard."""
+    seen = seen or {}
     target_roles = build_target_roles(profile)
     resume_skills = build_resume_skills(profile)
     tiers = build_company_tiers(profile)
     preferred_companies = (profile or {}).get("preferred_companies") or []
     preferred_locations = (profile or {}).get("preferred_locations") or []
 
-    state_path = Path(args.state)
-    seen, tracked_companies, url_keyed = ({}, None, False) if args.reset_state \
-        else load_previous_state(state_path)
-
     now_utc = datetime.now(timezone.utc)
     posted_cutoff = now_utc - timedelta(hours=args.hours)
 
-    con = sqlite3.connect(db_path)
+    con = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        employers = load_employers(con)
+        try:
+            employers = load_employers(con)
+        except SystemExit as exc:
+            raise ValueError(str(exc)) from exc
         current_fy = latest_fiscal_year(con)
         try:
             # lca_name arrived after the jobs table; a database last written by
@@ -1133,7 +1131,9 @@ def main():
                 + ("lca_name" if has_lca_name else "NULL") + " FROM jobs"
             ).fetchall()
         except sqlite3.OperationalError as exc:
-            raise SystemExit(f"Could not read jobs table: {exc}")
+            raise ValueError(
+                f"Could not read jobs table: {exc}. "
+                "Run `sponsorscan.py fetch-jobs` first.") from exc
         # Every employer on the boards this run, including boards that fetched
         # cleanly with no postings, which fetch-jobs records separately.
         companies_now = {row[1] for row in jobs if row[1]}
@@ -1145,9 +1145,11 @@ def main():
     finally:
         con.close()
 
+    warnings = []
     if not employers and needs_sponsorship(profile):
-        print("No LCA data loaded, so every sponsorship score is 0 and matches "
-              "rank on resume fit alone. Run `sponsorscan.py load-lca` first.")
+        warnings.append(
+            "No LCA data loaded, so every sponsorship score is 0 and matches "
+            "rank on resume fit alone. Run `sponsorscan.py load-lca` first.")
 
     employer_keys = list(employers.keys())
     fuzzy_cutoff = args.fuzzy_cutoff if HAVE_RAPIDFUZZ else 0
@@ -1328,6 +1330,67 @@ def main():
         row["application_priority"] = priority_label(
             row["combined_score"], row["resume_fit_score"])
         row.pop("_posted_ts", None)
+
+    return {
+        "matches": results, "dropped": dropped, "counts": counts,
+        "metadata": {
+            "generated_at_utc": now_utc.isoformat(),
+            "posted_cutoff_utc": posted_cutoff.isoformat(),
+            "hours": args.hours, "minimum_score": args.min_score,
+            "total_jobs": len(jobs), "warnings": warnings,
+        },
+        "now_utc": now_utc, "posted_cutoff": posted_cutoff,
+        "companies_now": companies_now, "baselined": baselined,
+    }
+
+
+def main():
+    args = build_parser().parse_args()
+
+    profile = None
+    if args.profile:
+        try:
+            profile = load_profile(args.profile)
+        except ProfileError as exc:
+            raise SystemExit(f"Invalid profile: {exc}")
+        print(f"Loaded profile: {describe_profile(profile)}")
+        for warning in authorization_warnings(profile):
+            print(f"  warning: {warning}")
+
+    output_config = (profile or {}).get("output_files", {})
+    args.out = args.out or output_config.get("all_matches") or "matches_48h.csv"
+    args.new_out = args.new_out or output_config.get("new_matches") or "new_jobs_48h.csv"
+    args.state = args.state or output_config.get("state") or str(DEFAULT_STATE)
+    # Beside the matches file unless named: "x_matches_48h.csv" gives
+    # "x_matches_48h_dropped.csv".
+    out_path = Path(args.out)
+    args.dropped_out = args.dropped_out or output_config.get("dropped") or str(
+        out_path.with_name(f"{out_path.stem}_dropped{out_path.suffix}"))
+    if args.min_score is None:
+        args.min_score = (profile or {}).get("minimum_score", 95)
+    if args.hours is None:
+        args.hours = (profile or {}).get("report_hours", 48)
+
+    if args.hours <= 0:
+        raise SystemExit("--hours must be greater than 0.")
+
+    db_path = Path(args.db) if args.db else DB_PATH
+    if not db_path.exists():
+        raise SystemExit(f"Could not find {db_path}. Run `sponsorscan.py fetch-jobs` first.")
+
+    state_path = Path(args.state)
+    seen, tracked_companies, url_keyed = ({}, None, False) if args.reset_state \
+        else load_previous_state(state_path)
+    try:
+        report = _generate_report(profile, db_path, args, seen,
+                                  tracked_companies, url_keyed)
+    except (ValueError, sqlite3.Error) as exc:
+        raise SystemExit(str(exc)) from exc
+    results, dropped, counts = report["matches"], report["dropped"], report["counts"]
+    now_utc, posted_cutoff = report["now_utc"], report["posted_cutoff"]
+    companies_now, baselined = report["companies_now"], report["baselined"]
+    for warning in report["metadata"]["warnings"]:
+        print(warning)
 
     new_results = [row for row in results if row["is_new_since_last_run"] == "YES"]
 

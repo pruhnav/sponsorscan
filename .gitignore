@@ -30,6 +30,7 @@ reports/
 artifacts/
 
 # SponsorScan state files
+.sponsorscan-dashboard/
 .sponsorscan_state.json
 .sponsorscan_*_state.json
 *.state.json

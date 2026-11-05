@@ -19,6 +19,7 @@ import copy
 import importlib.util
 import json
 import re
+import shlex
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -563,6 +564,12 @@ def run_setup(ask, profiles_dir="profiles", notify=None) -> Path:
     return save_profile(build_profile(**answers), path)
 
 
+def _shell_quote(value, windows):
+    """Quote a literal argument without evaluating profile text as shell code."""
+    value = str(value)
+    return "'" + value.replace("'", "''") + "'" if windows else shlex.quote(value)
+
+
 def _shell_lines(env, windows) -> list[str]:
     """Set each variable in the user's shell. A None value is a hidden prompt,
     so a password never lands in the command history."""
@@ -570,10 +577,10 @@ def _shell_lines(env, windows) -> list[str]:
     for key, value in env:
         if windows:
             lines.append(f'$env:{key} = Read-Host "{key}"' if value is None
-                         else f'$env:{key} = "{value}"')
+                         else f'$env:{key} = {_shell_quote(value, windows)}')
         else:
             lines.append(f'read -s -p "{key}: " {key}; echo; export {key}'
-                         if value is None else f'export {key}="{value}"')
+                         if value is None else f'export {key}={_shell_quote(value, windows)}')
     return lines
 
 
@@ -581,7 +588,7 @@ def _block(lines, indent=7) -> list[str]:
     return [" " * indent + line for line in lines]
 
 
-def setup_guide(profile, profile_path, windows=False) -> str:
+def setup_guide(profile, profile_path, windows=False, db_path=None) -> str:
     """What to do after `setup`, including the browser steps for each extra.
 
     Pure, like build_profile: the caller decides the shell. The steps are
@@ -591,12 +598,17 @@ def setup_guide(profile, profile_path, windows=False) -> str:
     """
     outputs = profile["output_files"]
     notifications = profile.get("notifications") or {}
+    profile_argument = _shell_quote(profile_path, windows)
+    db_argument = f" --db {_shell_quote(db_path, windows)}" if db_path is not None else ""
     out = [
         "Next steps",
         "",
+        "Optional selections record your preferences. Connections and scheduled",
+        "runs are not verified or started by saving the profile.",
+        "",
         "Check the setup, then run your first report:",
-        f"       python sponsorscan.py doctor --profile {profile_path}",
-        f"       python sponsor_daily_report.py --profile {profile_path}",
+        f"       python sponsorscan.py doctor --profile {profile_argument}{db_argument}",
+        f"       python sponsor_daily_report.py --profile {profile_argument}{db_argument}",
     ]
 
     if notifications.get("email_enabled"):
@@ -696,13 +708,8 @@ def setup_guide(profile, profile_path, windows=False) -> str:
             "       and click Create. A .json file lands in your Downloads folder.",
             '     - Seeing "Service account key creation is disabled"? Your',
             "       organization blocks keys. Start again with a personal account.",
-            "     Right after the download, this moves the newest .json file in",
-            "     Downloads into this folder as service-account.json:",
-            *_block([
-                'Get-ChildItem "$HOME\\Downloads\\*.json" | Sort-Object LastWriteTime'
-                ' | Select-Object -Last 1 | Move-Item -Destination service-account.json'
-                if windows else
-                'mv "$(ls -t ~/Downloads/*.json | head -1)" service-account.json']),
+            "     Move the key file you just downloaded into the repository root",
+            "     as service-account.json.",
             "     Git ignores that name. Never commit, share or paste its contents.",
             "",
             "  6. Create the spreadsheet",

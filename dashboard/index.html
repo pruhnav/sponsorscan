@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#fafafa">
+  <title>SponsorScan | Your workspace</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzExMSIvPjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiI+PHJlY3QgeD0iNyIgeT0iMTEiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxNSIgcng9IjIiLz48cGF0aCBkPSJNMTIgMTFWN2g4djRNNyAxN2gxOCIvPjwvZz48L3N2Zz4=">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<aside class="sidebar">
+  <a class="brand" href="#matches" aria-label="SponsorScan home"><svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h7m4 0h7"/><rect x="10" y="10" width="4" height="4" rx="1"/></svg><span>sponsorscan.</span></a>
+  <p class="workspace-label">YOUR WORKSPACE</p>
+  <nav aria-label="Workspace">
+    <a href="#matches" data-view="matches"><span>Matches</span><span id="nav-matches">0</span></a>
+    <a href="#applications" data-view="applications"><span>Applications</span><span id="nav-applications">0</span></a>
+    <a href="#profile" data-view="profile"><span>Profile</span></a>
+  </nav>
+  <div class="sidebar-bottom"><span class="local-dot" aria-hidden="true"></span> Local to this computer<p>Your profile and applications stay here.</p></div>
+</aside>
+<main id="main">
+  <header class="topbar"><span id="profile-label">Personal workspace</span><span id="connection">Connecting...</span></header>
+  <div class="content">
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <div id="task-status" role="status" aria-live="polite" hidden></div>
+    <section id="view-matches" class="view" aria-labelledby="matches-title">
+      <div class="page-heading"><div><p class="eyebrow">YOUR JOB SEARCH</p><h1 id="matches-title">Find your next role.</h1><p>Jobs matched to your profile, with the evidence behind each result.</p></div><div class="heading-actions"><button id="refresh" class="button secondary">Refresh matches</button><button id="fetch-jobs" class="button">Fetch jobs</button></div></div>
+      <div class="data-status"><span id="data-summary">Checking local data...</span><button id="load-history" class="text-button">Load employer history</button></div>
+      <div id="warnings" class="warnings" hidden></div>
+      <div class="summary" aria-label="Search summary"><div><span>Matching roles</span><strong id="match-count">0</strong></div><div><span>Saved to review</span><strong id="saved-count">0</strong></div><div><span>Applications sent</span><strong id="applied-count">0</strong></div></div>
+      <div class="toolbar"><label class="search"><span class="sr-only">Search matches</span><input id="match-search" type="search" placeholder="Search title, company, or location"></label><label><span class="sr-only">Role family</span><select id="role-filter"><option value="">All roles</option></select></label><label><span class="sr-only">Sort matches</span><select id="match-sort"><option value="recent">Most recent</option><option value="score">Highest fit</option></select></label><button id="export-matches" class="text-button">Export CSV</button></div>
+      <p id="results-label" class="results-label" aria-live="polite"></p>
+      <div id="matches-list" class="jobs-list"></div>
+      <details id="exclusions" class="exclusions"><summary>Why other jobs were filtered out</summary><p>These are the matching engine's exclusions, not employer hiring decisions.</p><div id="excluded-list"></div></details>
+      <p class="footnote">Profile fit is a ranking heuristic, not an ATS score. Employer filing history does not confirm sponsorship for a specific role.</p>
+    </section>
+    <section id="view-applications" class="view" hidden aria-labelledby="applications-title">
+      <div class="page-heading"><div><p class="eyebrow">KEEP TRACK</p><h1 id="applications-title">Your applications.</h1><p>Keep a record of what you saved, where you applied, and what happened next.</p></div><button id="add-application" class="button">Add application</button></div>
+      <div class="toolbar"><label class="search"><span class="sr-only">Search applications</span><input id="application-search" type="search" placeholder="Search your applications"></label><label><span class="sr-only">Application status</span><select id="status-filter"><option value="">All statuses</option><option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select></label><button id="export-applications" class="text-button">Export CSV</button></div>
+      <div id="applications-list" class="jobs-list"></div>
+      <p class="footnote">Statuses are updated by you. Opening a posting does not mark it as applied. Saved records stay available when jobs leave the feed.</p>
+    </section>
+    <section id="view-profile" class="view" hidden aria-labelledby="profile-title">
+      <div class="page-heading"><div><p id="profile-eyebrow" class="eyebrow">WORKSPACE SETUP</p><h1 id="profile-title">Make this search yours.</h1><p id="profile-intro">A few details to help SponsorScan find relevant roles. Everything is saved on this computer.</p></div></div>
+      <form id="profile-form" class="profile-form" novalidate>
+        <ol id="setup-steps" class="setup-steps" aria-label="Profile setup progress">
+          <li><button type="button" data-step="0" aria-current="step" disabled><span>01</span> About you</button></li>
+          <li><button type="button" data-step="1" disabled><span>02</span> Your search</button></li>
+          <li><button type="button" data-step="2" disabled><span>03</span> Your skills</button></li>
+          <li><button type="button" data-step="3" disabled><span>04</span> Review</button></li>
+        </ol>
+        <fieldset id="profile-fields" class="profile-fields" disabled>
+          <legend class="sr-only">Search profile</legend>
+          <section class="setup-panel" data-panel="0" aria-labelledby="about-title">
+            <p class="step-count">STEP 1 OF 4</p><h2 id="about-title" tabindex="-1">Let's start with you.</h2><p class="step-intro">Your work authorization helps set the posting filters and whether employer sponsorship history matters.</p>
+            <label class="name-field">Your name<input name="name" maxlength="100" autocomplete="given-name" placeholder="e.g. Alex" required></label>
+            <fieldset class="choice-group"><legend>What's your work authorization?</legend>
+              <div class="authorization-options">
+                <label class="choice-row"><input type="radio" name="work_authorization" value="opt" required><span><strong>OPT</strong><small>Post-completion work authorization</small></span></label>
+                <label class="choice-row"><input type="radio" name="work_authorization" value="stem_opt"><span><strong>STEM OPT</strong><small>The STEM extension of OPT</small></span></label>
+                <label class="choice-row"><input type="radio" name="work_authorization" value="us_citizen"><span><strong>U.S. citizen</strong><small>No sponsorship needed</small></span></label>
+                <label class="choice-row"><input type="radio" name="work_authorization" value="permanent_resident"><span><strong>Permanent resident</strong><small>No sponsorship needed</small></span></label>
+                <label class="choice-row"><input type="radio" name="work_authorization" value="other"><span><strong>Other / needs sponsorship</strong><small>Use sponsorship-focused defaults</small></span></label>
+              </div>
+            </fieldset>
+            <p id="authorization-note" class="context-note" aria-live="polite">Choose the option that matches your situation.</p>
+          </section>
+          <section class="setup-panel" data-panel="1" hidden aria-labelledby="search-title">
+            <p class="step-count">STEP 2 OF 4</p><h2 id="search-title" tabindex="-1">What are you looking for?</h2><p class="step-intro">Choose the roles you would apply for, then set how broad your search should be.</p>
+            <fieldset class="choice-group"><legend>Target roles <span class="optional">Choose one or more</span></legend><div id="role-choices" class="role-choices"></div></fieldset>
+            <label for="custom-role">Another job title <span class="optional">Optional</span></label>
+            <div class="input-action"><input id="custom-role" maxlength="150" placeholder="e.g. Product Engineer" list="role-suggestions"><button id="add-role" type="button" class="button secondary">Add role</button></div><datalist id="role-suggestions"></datalist>
+            <div id="custom-roles" class="selected-roles"></div><p class="field-help">Custom titles are matched as written. Built-in role groups also recognize common title variations.</p>
+            <label>Preferred locations <span class="optional">Optional</span><input name="preferred_locations" placeholder="New York, Boston, Remote"><small>Separate with commas. These locations get a ranking boost; other U.S. locations still appear. Leave blank for no preference.</small></label>
+            <div class="form-grid"><label>Maximum experience a job can require<input name="max_required_experience" type="number" min="0" max="40" step="1" value="1" required><small>In years. Set 1 to include jobs asking for 0 or 1 year. This is the posting's requirement, not your experience.</small></label><label>How recent should postings be?<select name="report_hours"><option value="48">Last 2 days</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option><option value="2160">Last 90 days</option></select><small>Jobs without a usable posting date are excluded.</small></label></div>
+          </section>
+          <section class="setup-panel" data-panel="2" hidden aria-labelledby="skills-title">
+            <p class="step-count">STEP 3 OF 4</p><h2 id="skills-title" tabindex="-1">What do you bring to the role?</h2><p class="step-intro">Add skills from your resume and rate your familiarity. Stronger skills carry more weight when ranking jobs.</p>
+            <label for="skill-input">Add a skill</label><div class="input-action"><input id="skill-input" maxlength="1500" placeholder="e.g. Python, SQL, JavaScript" list="skill-suggestions"><button id="add-skill" type="button" class="button secondary">Add skill</button></div><datalist id="skill-suggestions"></datalist>
+            <p class="field-help">Use a suggestion, or add your own. You can paste several skills separated by commas.</p>
+            <div id="suggested-skills" class="suggested-skills" aria-label="Common skills"></div>
+            <div class="skills-heading"><span>YOUR SKILLS</span><span>FAMILIARITY</span></div><div id="skills-list" class="skills-list"></div>
+            <p class="context-note">Strong: a core skill. Comfortable: you can use it independently. Familiar: you have some exposure.</p>
+          </section>
+          <section class="setup-panel" data-panel="3" hidden aria-labelledby="review-title">
+            <p class="step-count">STEP 4 OF 4</p><h2 id="review-title" tabindex="-1">Ready to build your shortlist?</h2><p class="step-intro">Check your choices. You can change them later in Profile.</p>
+            <dl id="profile-review" class="profile-review"></dl>
+            <details class="advanced"><summary>Filters and ranking</summary><p class="field-help">These are the rules your profile will use. Advanced filters can also be changed in your profile JSON.</p><ul id="review-filters" class="review-filters"></ul><label>Minimum combined score<input name="minimum_score" type="number" min="0" max="500" step="1" value="95" required><small>Combines profile fit, career level, and employer signals. This is not a percentage. Lower it to include more matches.</small></label></details>
+            <fieldset class="choice-group integrations"><legend>Results outside the dashboard <span class="optional">Optional</span></legend><p class="field-help">Use the dashboard on its own, or save a preference to set up one of these later.</p>
+              <label class="choice-row"><input type="checkbox" name="email_enabled"><span><strong>Email alerts</strong><small>Get new matches through Gmail. Requires an App Password and a separate sending step.</small></span></label>
+              <label class="choice-row"><input type="checkbox" name="google_sheets_enabled"><span><strong>Google Sheets</strong><small>Copy results to a Sheet. Requires a service account and spreadsheet access.</small></span></label>
+            </fieldset>
+            <p id="integration-note" class="field-help" aria-live="polite">No account is needed to use the local dashboard.</p>
+            <button id="open-setup-guide" type="button" class="text-button" hidden>Read setup instructions for your saved profile</button>
+          </section>
+          <p id="profile-save-status" class="form-error" role="alert" tabindex="-1" hidden></p>
+          <div class="form-footer setup-footer"><button id="setup-back" type="button" class="text-button" hidden>&#8592; Back</button><span id="setup-save-note">Your profile is saved at the final step.</span><button id="setup-next" type="submit" class="button">Continue &#8594;</button></div>
+        </fieldset>
+      </form>
+      <section id="setup-complete" class="setup-complete" hidden aria-labelledby="complete-title">
+        <p class="step-count">PROFILE SAVED</p><h2 id="complete-title" tabindex="-1">Your workspace is ready.</h2><p class="step-intro">Now bring in the data for your first shortlist.</p>
+        <div id="finish-history-row" class="next-action"><div><h3>Employer sponsorship history</h3><p id="finish-history-status">Download the prebuilt employer table to include filing history in your rankings.</p></div><button id="finish-history" type="button" class="button secondary">Load history</button></div>
+        <div class="next-action"><div><h3>Current job postings</h3><p id="finish-jobs-status">Fetch roles from the job boards in your company list.</p></div><button id="finish-fetch" type="button" class="button secondary">Fetch jobs</button></div>
+        <div id="finish-extras-row" class="next-action" hidden><div><h3>Set up your extras</h3><p>Preferences saved. Follow the instructions and run the connection checks in your terminal.</p></div><button id="finish-guide" type="button" class="text-button">Read instructions</button></div>
+        <p class="field-help">Fetching needs an internet connection. This dashboard updates when you ask it to; scheduled delivery is a separate setup.</p>
+        <div class="form-footer"><a href="#matches" class="button">Open matches &#8594;</a><button id="edit-profile" type="button" class="text-button">Edit profile</button></div>
+      </section>
+    </section>
+  </div>
+</main>
+<dialog id="setup-guide-dialog" aria-labelledby="setup-guide-title"><button id="close-setup-guide" type="button" class="close" aria-label="Close setup instructions">&#215;</button><h2 id="setup-guide-title">Finish your optional setup.</h2><p class="muted">Run these steps from your SponsorScan folder. Enter passwords only in your own terminal. These instructions use your saved profile and output filenames.</p><pre id="setup-guide-text" tabindex="0"></pre></dialog>
+<dialog id="job-dialog" aria-labelledby="detail-title">
+  <button id="close-detail" class="close" aria-label="Close job details">&#215;</button>
+  <p id="detail-company" class="eyebrow"></p><h2 id="detail-title"></h2><p id="detail-location" class="muted"></p>
+  <div class="detail-actions"><a id="open-posting" class="button" target="_blank" rel="noopener noreferrer">Open posting &#8599;</a><span id="detail-source" class="muted"></span></div>
+  <div id="detail-evidence"><h3>Why this job matched</h3><ul id="detail-reasons"></ul><div id="detail-filings" class="filings"></div><p class="footnote">Filing counts describe past employer activity. Verify the current role's sponsorship policy with the employer.</p></div>
+  <form id="application-form"><label>Status<select id="detail-status"><option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select></label><label>Notes<textarea id="detail-notes" rows="4" maxlength="10000" placeholder="Referral, recruiter, next steps..."></textarea></label><button class="button" type="submit">Save changes</button><p id="detail-save-status" role="status"></p></form>
+</dialog>
+<dialog id="manual-dialog" aria-labelledby="manual-title"><button id="close-manual" class="close" aria-label="Close add application">&#215;</button><h2 id="manual-title">Add an application</h2><p class="muted">Track a job you found outside SponsorScan.</p><form id="manual-form"><label>Company<input name="company" maxlength="200" required></label><label>Job title<input name="title" maxlength="200" required></label><label>Posting URL (optional)<input name="url" type="url" maxlength="4096" placeholder="https://..."></label><label>Status<select name="status"><option value="applied">Applied</option><option value="saved">Saved</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option></select></label><label>Notes<textarea name="notes" maxlength="10000" rows="3"></textarea></label><button class="button" type="submit">Add application</button><p id="manual-save-status" role="status"></p></form></dialog>
+<noscript><p class="noscript">JavaScript is required for this local dashboard. The existing SponsorScan CLI still works without it.</p></noscript>
+</body>
+</html>

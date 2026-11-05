@@ -37,6 +37,34 @@ Then, optionally:
 `discover` also widens the company list automatically when you want broader
 coverage than the boards that ship in `companies.yaml`.
 
+## Local dashboard
+
+After installing the dependencies below, start your personal workspace:
+
+```bash
+python sponsorscan.py dashboard
+```
+
+Your browser opens at **http://127.0.0.1:8765**. Create your profile in the
+dashboard, fetch jobs, and save applications with statuses and notes. No hosted
+account, Node.js installation, or frontend build is required.
+
+If you already have one personal profile in `profiles/`, it is selected
+automatically. To choose a particular profile:
+
+```bash
+python sponsorscan.py dashboard --profile profiles/my_profile.json
+```
+
+Applications live in `.sponsorscan-dashboard/applications.sqlite3` and survive
+job refreshes. A new dashboard profile is saved alongside them; an explicitly
+selected existing profile is updated in place. The dashboard does not consume
+email alert state or send email or Sheets updates. Those remain optional CLI
+integrations. Press **Ctrl+C** in the terminal to stop the server.
+
+See [the dashboard guide](docs/DASHBOARD.md) for first-run steps, backups,
+alternate ports, and how local updates work.
+
 ## Install
 
 ### Before you start

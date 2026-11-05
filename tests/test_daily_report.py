@@ -568,4 +568,13 @@ def test_a_sponsor_that_stopped_filing_is_flagged():
 def test_signals_are_blank_without_an_employer():
     signals = sdr.employer_signals(None, current_fy=2026)
     assert signals == {"lca_years": "", "lca_client_site_share": "",
-                       "lca_new_hire_share": "", "notes": []}
+                       "lca_new_hire_share": "", "perm_certified": "",
+                       "notes": []}
+
+
+def test_green_card_filings_are_noted():
+    emp = dict(HEAVY_FILER, filed=100, secondary=0, new_hires=20, first_fy=2026,
+               last_fy=2026, perm_certified=12)
+    signals = sdr.employer_signals(emp, current_fy=2026)
+    assert signals["perm_certified"] == 12
+    assert "sponsors green cards (12 PERM certified)" in signals["notes"]

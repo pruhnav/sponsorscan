@@ -92,12 +92,33 @@ it should cover, export, and upload both files over the old ones:
 ```powershell
 python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2025_Q4.xlsx" --replace
 python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2026_Q3.xlsx"
+python sponsorscan.py load-lca "$HOME\Downloads\PERM_Disclosure_Data_FY2025_Q4.xlsx"
+python sponsorscan.py load-lca "$HOME\Downloads\PERM_Disclosure_Data_FY2026_Q3.xlsx"
 python sponsorscan.py export-lca lca.ndjson.gz
 gh release upload lca-latest lca.ndjson.gz lca.json --clobber
 ```
 
 `export-lca` always writes the same bytes for the same data, so the checksum
 changes only when the data does.
+
+### Green card (PERM) filings
+
+An H-1B lasts up to six years. An employer that also files PERM applications,
+the first step of an employment-based green card, has kept people past that.
+DOL publishes these filings on the same page, under **PERM Program**, as
+`PERM_Disclosure_Data_FY2026_Q3.xlsx` and so on. Load one like an LCA file:
+
+```powershell
+python sponsorscan.py load-lca "$HOME\Downloads\PERM_Disclosure_Data_FY2026_Q3.xlsx"
+```
+
+`load-lca` recognises a PERM file by its columns and stores it per quarter
+beside the LCA filings, with the same rules: files that overlap never count a
+filing twice, and reloading changes nothing. `--replace` on a PERM file clears
+the green card filings only, and on an LCA file the LCA filings only. "Certified
+- Expired" counts as certified: DOL approved it, and the employer did not take
+the next step in time. The prebuilt table includes the green card filings, so
+`load-lca --prebuilt` loads them too.
 
 ### Resolving the file automatically
 
@@ -408,7 +429,7 @@ match a company equally well, the one with the most certified LCAs wins, so
 just "AMAZON". The `lca_employer` column of the CSV names the DOL employer each
 job was matched to.
 
-Three more columns describe that employer's filings. They are shown, not
+Four more columns describe that employer's filings. They are shown, not
 scored, so you can judge for yourself:
 
 | Column | Meaning |
@@ -416,6 +437,7 @@ scored, so you can judge for yourself:
 | `lca_years` | The fiscal years with filings among those loaded, such as `FY2025-FY2026` |
 | `lca_client_site_share` | Share of filings that place the worker at another company's site, the mark of a staffing or consulting firm. At 50% or more, `why_ranked` says so |
 | `lca_new_hire_share` | Share of filings for new hires rather than extensions. A new grad needs an employer that files for new hires, not only renewals |
+| `perm_certified` | Green card (PERM) applications certified for the employer in the quarters loaded. When above zero, `why_ranked` says "sponsors green cards" |
 
 `why_ranked` also says "no filings since FY…" when an employer's last filing is
 two or more fiscal years before the newest loaded. These need a database loaded

@@ -401,6 +401,30 @@ def test_lca_name_matches_while_the_brand_stays_on_display(workspace):
     assert rows["Instacart"]["lca_employer"] == "MAPLEBEAR INC."
 
 
+def test_dropped_jobs_are_written_with_their_reason(workspace):
+    from sponsorscan import norm_employer
+    stale = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    con = sqlite3.connect(workspace / "sponsorscan.db")
+    con.execute("INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)",
+                ("test:old", "test", "Oldco", norm_employer("Oldco"), "Software Engineer",
+                 "Austin, TX", "https://example.com/old", stale, "Python.", "2026-09-15"))
+    con.commit()
+    con.close()
+
+    output = run_report(workspace)
+    dropped = {r["company"]: r for r in read_csv(workspace / "all_dropped.csv")}
+
+    assert "citizen" in dropped["Acme Defense"]["reason"].lower()
+    assert "must be a us citizen" in dropped["Acme Defense"]["reason"].lower()
+    assert dropped["Initech"]["reason"] == "PhD required in description"
+    assert dropped["Umbrella"]["reason"] == "8+ years required"
+    assert dropped["Globex"]["reason"] == "outside the US: Remote in Europe"
+    assert dropped["Databricks"]["reason"] == "senior-level title"
+    assert dropped["Databricks"]["url"].startswith("https://example.com/jobs/")
+    assert "Oldco" not in dropped, "age is not a judgment; old postings stay out"
+    assert "all_dropped.csv" in output
+
+
 def test_unclear_location_is_kept_with_a_note(workspace):
     add_job(workspace, 100, "Stripe", location="Remote")
     add_job(workspace, 101, "Stripe", title="Data Engineer, New Grad",

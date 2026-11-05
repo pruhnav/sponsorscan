@@ -334,6 +334,15 @@ reports for more than one person.
 | `--include-non-us` | Keep postings outside the United States |
 | `--include-unknown-posted` | Keep postings whose ATS supplies no usable date |
 | `--reset-state` | Treat every current match as new |
+| `--dropped-out dropped.csv` | Where to write the dropped jobs; by default the `--out` name with `_dropped` added |
+
+Every job a rule drops is written to a third CSV beside the matches, such as
+`yourid_matches_48h_dropped.csv`, with a `reason` column. A work-authorization
+drop names the rule and quotes the words that triggered it, for example
+`U.S. citizenship required: "must be a US citizen"`. If a job you would want
+shows up there, the reason says which rule to look at. Postings outside the
+time window, and titles outside your target roles, are not listed: they are not
+judgments about the job, and there are far more of them.
 
 A posting is dropped as outside the US only when its location names somewhere
 else and nowhere in the US. One listing several places counts as US if any of

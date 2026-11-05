@@ -456,20 +456,50 @@ AUTHORIZATION_CHECKS = {
 }
 
 
-def violates_work_authorization(blob, profile):
-    """True when the posting conflicts with the profile's authorization rules."""
-    if not profile:
-        return any(pattern.search(blob) for pattern in DISQ_RE)
+# How each authorization rule is named in the dropped-jobs CSV.
+AUTHORIZATION_LABELS = {
+    "reject_no_future_sponsorship": "no sponsorship now or in the future",
+    "reject_opt_excluded": "OPT or CPT excluded",
+    "reject_permanent_authorization_required": "permanent work authorization required",
+    "reject_citizenship_required": "U.S. citizenship required",
+    "reject_clearance_roles": "clearance or export control",
+}
 
-    return any(
-        pattern.search(blob)
-        for flag, patterns in AUTHORIZATION_CHECKS.items()
-        if profile.get(flag, True)
+
+def _quoted(match):
+    return '"' + " ".join(match.group(0).split())[:80] + '"'
+
+
+def authorization_conflict(blob, profile):
+    """Why the posting conflicts with the profile's authorization rules, or None.
+
+    The reason names the rule and quotes the words that triggered it, so a
+    wrong drop is easy to spot in the dropped-jobs CSV.
+    """
+    if not profile:
+        for pattern in DISQ_RE:
+            match = pattern.search(blob)
+            if match:
+                return f"work authorization: {_quoted(match)}"
+        return None
+
+    for flag, patterns in AUTHORIZATION_CHECKS.items():
+        if not profile.get(flag, True):
+            continue
         # A refusal to sponsor cannot disqualify someone who never needs it,
         # whatever an older citizen profile's defaults say.
-        and (flag != "reject_no_future_sponsorship" or needs_sponsorship(profile))
-        for pattern in patterns
-    )
+        if flag == "reject_no_future_sponsorship" and not needs_sponsorship(profile):
+            continue
+        for pattern in patterns:
+            match = pattern.search(blob)
+            if match:
+                return f"{AUTHORIZATION_LABELS[flag]}: {_quoted(match)}"
+    return None
+
+
+def violates_work_authorization(blob, profile):
+    """True when the posting conflicts with the profile's authorization rules."""
+    return authorization_conflict(blob, profile) is not None
 
 
 # ----------------------------------------------------------- company fit
@@ -951,6 +981,9 @@ CSV_FIELDS = [
     "lca_certified", "lca_employer", "job_key",
 ]
 
+DROPPED_FIELDS = ["company", "title", "location", "posted", "reason", "source", "url",
+                  "job_key"]
+
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
@@ -960,6 +993,9 @@ def build_parser():
     parser.add_argument("--out", default=None, help="All currently matching jobs")
     parser.add_argument("--new-out", default=None,
                         help="Only jobs new since the previous run")
+    parser.add_argument("--dropped-out", default=None,
+                        help="Jobs a rule dropped, with the reason (default: the "
+                             "--out name with _dropped added)")
     parser.add_argument("--state", default=None,
                         help="Snapshot file used to identify new jobs")
     parser.add_argument("--top", type=int, default=50, help="How many top jobs to print")
@@ -997,6 +1033,11 @@ def main():
     args.out = args.out or output_config.get("all_matches") or "matches_48h.csv"
     args.new_out = args.new_out or output_config.get("new_matches") or "new_jobs_48h.csv"
     args.state = args.state or output_config.get("state") or str(DEFAULT_STATE)
+    # Beside the matches file unless named: "x_matches_48h.csv" gives
+    # "x_matches_48h_dropped.csv".
+    out_path = Path(args.out)
+    args.dropped_out = args.dropped_out or output_config.get("dropped") or str(
+        out_path.with_name(f"{out_path.stem}_dropped{out_path.suffix}"))
     if args.min_score is None:
         args.min_score = (profile or {}).get("minimum_score", 95)
     if args.hours is None:
@@ -1075,6 +1116,10 @@ def main():
             url_key_uses[legacy] = url_key_uses.get(legacy, 0) + 1
 
     matches = {}  # name matched on -> (key, confidence); one lookup per company
+    # Jobs a rule judged against, with the reason, so a wrong drop can be seen.
+    # Postings outside the time window, and titles outside the target roles,
+    # are not judgments about the job and would bury the rest, so they stay out.
+    dropped = []
     for (company, company_norm, title, location, url, posted, description, source,
          job_key, lca_name) in jobs:
         parsed_posted = parse_posted_datetime(posted)
@@ -1088,8 +1133,13 @@ def main():
 
         blob = f"{title or ''}\n{description or ''}"
 
-        if violates_work_authorization(blob, profile):
+        job = {"company": company, "title": title, "location": location,
+               "posted": posted, "source": source, "url": url, "job_key": job_key}
+
+        conflict = authorization_conflict(blob, profile)
+        if conflict:
             counts["disqualifier"] += 1
+            dropped.append(dict(job, reason=conflict))
             continue
 
         role_family, role_base = classify_role(title, target_roles)
@@ -1111,11 +1161,13 @@ def main():
                 counts["phd_required"] += 1
             elif exclusion_reason and exclusion_reason.startswith("Master's"):
                 counts["masters_required"] += 1
+            dropped.append(dict(job, reason=exclusion_reason))
             continue
 
         verdict = "us" if args.include_non_us else location_verdict(location)
         if verdict == "non_us":
             counts["location"] += 1
+            dropped.append(dict(job, reason=f"outside the US: {location}"))
             continue
         if verdict == "unclear":
             counts["location_unclear"] += 1
@@ -1149,6 +1201,7 @@ def main():
         combined_score = resume_fit + level_score + company_points + sponsor_points
         if combined_score < args.min_score:
             counts["score"] += 1
+            dropped.append(dict(job, reason=f"combined score {combined_score} below {args.min_score}"))
             continue
 
         # fetch-jobs keys each job by board and posting ID ("greenhouse:stripe:123").
@@ -1217,6 +1270,7 @@ def main():
 
     write_csv(Path(args.out), results, CSV_FIELDS)
     write_csv(Path(args.new_out), new_results, CSV_FIELDS)
+    write_csv(Path(args.dropped_out), dropped, DROPPED_FIELDS)
     save_state(state_path,
                update_seen(seen, {row["job_key"] for row in results}, now_utc.date()),
                (tracked_companies or set()) | companies_now)
@@ -1224,6 +1278,7 @@ def main():
     print(f"Wrote {len(results):,} jobs posted within the last {args.hours:g} hours "
           f"to {args.out}")
     print(f"Wrote {len(new_results):,} jobs new since the previous run to {args.new_out}")
+    print(f"Wrote {len(dropped):,} dropped jobs, each with its reason, to {args.dropped_out}")
     print(f"Posting cutoff (UTC): {posted_cutoff.isoformat()}")
     if not seen:
         print("No previous snapshot was found, so all current matches count as new.")

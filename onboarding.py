@@ -29,7 +29,6 @@ import yaml
 
 from profile_loader import (
     DEFAULT_PROFILE,
-    VALID_WORK_AUTHORIZATION,
     ProfileError,
     load_profile,
     validate_profile,

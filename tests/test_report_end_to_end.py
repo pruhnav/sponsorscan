@@ -406,3 +406,14 @@ def test_lca_name_matches_while_the_brand_stays_on_display(workspace):
     rows = {r["company"]: r for r in read_csv(workspace / "all.csv")}
     assert int(rows["Instacart"]["lca_certified"]) == 900
     assert rows["Instacart"]["lca_employer"] == "MAPLEBEAR INC."
+
+
+def test_unclear_location_is_kept_with_a_note(workspace):
+    add_job(workspace, 100, "Stripe", location="Remote")
+    add_job(workspace, 101, "Stripe", title="Data Engineer, New Grad",
+            location="New York or London")
+    output = run_report(workspace)
+    rows = {(r["company"], r["title"]): r for r in read_csv(workspace / "all.csv")}
+    assert "location unclear" in rows["Stripe", "Software Engineer, New Grad"]["why_ranked"]
+    assert "location unclear" not in rows["Stripe", "Data Engineer, New Grad"]["why_ranked"]
+    assert "unclear location" in output

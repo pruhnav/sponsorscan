@@ -336,6 +336,12 @@ reports for more than one person.
 | `--include-unknown-posted` | Keep postings whose ATS supplies no usable date |
 | `--reset-state` | Treat every current match as new |
 
+A posting is dropped as outside the US only when its location names somewhere
+else and nowhere in the US. One listing several places counts as US if any of
+them is, so "New York or London" is kept. A location that names no state or
+country, such as "San Francisco", "Remote" or "2 Locations", is kept and marked
+"location unclear" in `why_ranked`; open the posting to check it is in the US.
+
 Employer matching uses the same lookup as `report`. Among the DOL names that
 match a company equally well, the one with the most certified LCAs wins, so
 "Amazon" joins to Amazon.com Services LLC rather than to a small filer named

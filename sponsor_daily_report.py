@@ -572,26 +572,44 @@ _STATE_CODE_TAIL = re.compile(r"\b([a-z]{2})\b\.?\s*(?:\d{5}(?:-\d{4})?)?$")
 _LOCATION_SPLIT = re.compile(r"[,/|;]|\s+-\s+|–|\bor\b|\band\b")
 
 
-def is_us_location(location):
+# A state name ending a segment: "Seattle, Washington", "New York". Anchored
+# to the end, so "Oregon-adjacent" is not Oregon.
+_STATE_NAME_TAIL = re.compile(
+    r"\b(?:" + "|".join(sorted(map(re.escape, US_STATE_NAMES))) + r")$")
+
+
+def _segment_is_us(segment):
+    if segment in US_STATE_CODES or _STATE_NAME_TAIL.search(segment):
+        return True
+    tail = _STATE_CODE_TAIL.search(segment)
+    return bool(tail and tail.group(1) in US_STATE_CODES)
+
+
+def location_verdict(location):
+    """"us", "non_us" or "unclear" for a posting's location.
+
+    A location listing several places is in the US when any of them is: "New
+    York or London" is a job you can take in New York. It is outside the US
+    only when it names somewhere else and nowhere in the US. Everything else is
+    unclear: a bare city ("San Francisco"), "Remote", "Hybrid", "2 Locations".
+    Those are kept and flagged rather than dropped, because a wrong drop costs a
+    job the user never sees, and a wrong keep costs a glance.
+    """
     loc = (location or "").strip().lower()
     if not loc:
-        return False
-    if NON_US_RE.search(loc):
-        return False
+        return "unclear"
     if any(term in loc for term in US_EXPLICIT):
-        return True
-    if any(state in loc for state in US_STATE_NAMES):
-        return True
-    for segment in _LOCATION_SPLIT.split(loc):
-        segment = segment.strip().rstrip(".")
-        if not segment:
-            continue
-        if segment in US_STATE_CODES:
-            return True
-        tail = _STATE_CODE_TAIL.search(segment)
-        if tail and tail.group(1) in US_STATE_CODES:
-            return True
-    return False
+        return "us"
+    segments = [s.strip().rstrip(".") for s in _LOCATION_SPLIT.split(loc)]
+    if any(_segment_is_us(s) for s in segments if s):
+        return "us"
+    if NON_US_RE.search(loc):
+        return "non_us"
+    return "unclear"
+
+
+def is_us_location(location):
+    return location_verdict(location) == "us"
 
 
 # ------------------------------------------------------------------ scoring
@@ -1026,7 +1044,7 @@ def main():
         "disqualifier": 0, "role": 0, "career": 0,
         "phd_title": 0, "level_title": 0, "experience_over_limit": 0,
         "phd_required": 0, "masters_required": 0,
-        "location": 0, "score": 0,
+        "location": 0, "location_unclear": 0, "score": 0,
         "posted_too_old": 0, "posted_unknown": 0,
     }
     baselined = {}  # company_norm -> matches recorded without alerting
@@ -1079,9 +1097,12 @@ def main():
                 counts["masters_required"] += 1
             continue
 
-        if not args.include_non_us and not is_us_location(location):
+        verdict = "us" if args.include_non_us else location_verdict(location)
+        if verdict == "non_us":
             counts["location"] += 1
             continue
+        if verdict == "unclear":
+            counts["location_unclear"] += 1
 
         skills, skill_score = score_skills(title, description, resume_skills)
         resume_fit = min(100, role_base + skill_score)
@@ -1137,6 +1158,8 @@ def main():
         reasons.extend(bonus_signals)
         reasons.extend(level_signals)
         reasons.extend(sponsor_signals)
+        if verdict == "unclear":
+            reasons.append("location unclear, check it is in the US")
 
         results.append({
             "application_priority": "",  # filled in once the score is final
@@ -1206,7 +1229,11 @@ def main():
     print(f"  - {counts['phd_required']:,} required a PhD")
     print(f"  - {counts['masters_required']:,} required a master's degree")
     print(f"{counts['role']:,} dropped outside the target role list")
-    print(f"{counts['location']:,} dropped as non-US or unrecognized")
+    print(f"{counts['location']:,} dropped as outside the US")
+    if counts["location_unclear"]:
+        print(f"  ({counts['location_unclear']:,} with an unclear location, such as a "
+              "bare city or \"Remote\", were kept and marked \"location unclear\"; "
+              "check those are in the US)")
     print(f"{counts['score']:,} dropped below combined score {args.min_score}")
     if not HAVE_RAPIDFUZZ:
         print("rapidfuzz is not installed, so employer matching was exact-only.")

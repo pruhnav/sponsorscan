@@ -383,3 +383,26 @@ def test_missing_database_fails_clearly(tmp_path):
         capture_output=True, text=True, cwd=str(REPO))
     assert result.returncode != 0
     assert "absent.db" in result.stderr
+
+
+def test_csv_names_the_dol_employer_each_job_was_matched_to(workspace):
+    run_report(workspace)
+    rows = {r["company"]: r for r in read_csv(workspace / "all.csv")}
+    assert rows["Databricks"]["lca_employer"] == "DATABRICKS, INC."
+    assert rows["Benchling"]["lca_employer"] == "Benchling, Inc."
+
+
+def test_lca_name_matches_while_the_brand_stays_on_display(workspace):
+    add_job(workspace, 100, "Instacart")
+    con = sqlite3.connect(workspace / "sponsorscan.db")
+    con.execute("ALTER TABLE jobs ADD COLUMN lca_name TEXT")
+    con.execute("UPDATE jobs SET lca_name = 'Maplebear' WHERE job_key = 'test:100'")
+    con.execute("INSERT INTO employers VALUES ('maplebear', 'MAPLEBEAR INC.', 900, 0, 0, "
+                "'[]', '[]', 0, 0, 0, 0)")
+    con.commit()
+    con.close()
+
+    run_report(workspace)
+    rows = {r["company"]: r for r in read_csv(workspace / "all.csv")}
+    assert int(rows["Instacart"]["lca_certified"]) == 900
+    assert rows["Instacart"]["lca_employer"] == "MAPLEBEAR INC."

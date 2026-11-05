@@ -337,8 +337,11 @@ reports for more than one person.
 | `--include-unknown-posted` | Keep postings whose ATS supplies no usable date |
 | `--reset-state` | Treat every current match as new |
 
-Employer matching uses the same exact-then-fuzzy lookup as `report`, so
-Instacart's postings still join to Maplebear Inc.
+Employer matching uses the same lookup as `report`. Among the DOL names that
+match a company equally well, the one with the most certified LCAs wins, so
+"Amazon" joins to Amazon.com Services LLC rather than to a small filer named
+just "AMAZON". The `lca_employer` column of the CSV names the DOL employer each
+job was matched to.
 
 ## Work-authorization configurations
 
@@ -530,9 +533,11 @@ willingness to sponsor, nothing more.
 
 **Employer name matching is imperfect.** DOL sees legal entity names, while job
 boards show brand names. Instacart, for example, files as Maplebear Inc. Fuzzy
-matching at cutoff 90 handles many differences, but set `name:` explicitly in
-`companies.yaml` when you know the legal name and check the `signals` column for
-fuzzy-match notes.
+matching at cutoff 90 handles many differences, and ties go to the employer with
+the most filings. Check the `lca_employer` column of the CSV: when it names the
+wrong company (an abbreviation such as "AWS" can land on an unrelated filer),
+add `lca_name:` with the filing name to that company's entry in
+`companies.yaml`, for example `{slug: instacart, name: Instacart, lca_name: Maplebear}`.
 
 **`discover` guesses slugs, and a guess can land on the wrong company.** A probe
 only proves that the board exists, not that it belongs to the employer whose

@@ -906,7 +906,7 @@ CSV_FIELDS = [
     "sponsorship_score", "is_new_since_last_run", "role_family",
     "matched_resume_skills", "experience_years_detected", "company",
     "title", "location", "posted", "source", "why_ranked", "url",
-    "lca_certified", "job_key",
+    "lca_certified", "lca_employer", "job_key",
 ]
 
 
@@ -984,9 +984,14 @@ def main():
     try:
         employers = load_employers(con)
         try:
+            # lca_name arrived after the jobs table; a database last written by
+            # an older fetch-jobs simply has none.
+            has_lca_name = "lca_name" in {
+                r[1] for r in con.execute("PRAGMA table_info(jobs)")}
             jobs = con.execute(
                 "SELECT company, company_norm, title, location, url, posted, "
-                "description, source, job_key FROM jobs"
+                "description, source, job_key, "
+                + ("lca_name" if has_lca_name else "NULL") + " FROM jobs"
             ).fetchall()
         except sqlite3.OperationalError as exc:
             raise SystemExit(f"Could not read jobs table: {exc}")
@@ -1027,8 +1032,9 @@ def main():
             legacy = stable_job_key(company, title, location, url)
             url_key_uses[legacy] = url_key_uses.get(legacy, 0) + 1
 
+    matches = {}  # name matched on -> (key, confidence); one lookup per company
     for (company, company_norm, title, location, url, posted, description, source,
-         job_key) in jobs:
+         job_key, lca_name) in jobs:
         parsed_posted = parse_posted_datetime(posted)
         if parsed_posted is None:
             if not args.include_unknown_posted:
@@ -1085,8 +1091,12 @@ def main():
 
         # Exact employer key first, then fuzzy. DOL records legal names while
         # boards show brands, so Instacart's postings sit under Maplebear Inc.
-        matched_key, confidence = match_employer(
-            company_norm, employers, employer_keys, fuzzy_cutoff)
+        # `lca_name:` in companies.yaml, when the brand and the filing name differ.
+        match_name = norm_employer(lca_name) if lca_name else company_norm
+        if match_name not in matches:
+            matches[match_name] = match_employer(
+                match_name, employers, employer_keys, fuzzy_cutoff)
+        matched_key, confidence = matches[match_name]
         emp = employers.get(matched_key) if matched_key else None
         sponsor_points, sponsor_signals = sponsorship_score(
             emp, title, blob, confidence, profile)
@@ -1140,6 +1150,9 @@ def main():
             "why_ranked": "; ".join(reasons),
             "url": url,
             "lca_certified": emp["certified"] if emp else 0,
+            # Shown even on an exact match, where a stub filer would otherwise
+            # pass unnoticed.
+            "lca_employer": emp["display"] if emp else "",
             "job_key": key,
             "_posted_ts": parsed_posted.timestamp() if parsed_posted else 0.0,
         })

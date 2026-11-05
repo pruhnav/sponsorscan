@@ -592,20 +592,24 @@ def test_simple_report_does_not_penalise_withdrawn_filings(monkeypatch, tmp_path
 
 # ------------------------------------------------- load-lca, several files
 #
-# DOL's quarterly files are cumulative within a fiscal year: the Q3 file holds
-# every decision from October through June. So a later quarter replaces an
-# earlier one of the same year, while different years add up.
+# DOL has published both ways: FY2025's quarterly files hold one quarter each,
+# while the FY2026 Q3 file holds every decision from October through June. So
+# each row is filed under the quarter its decision date falls in, and a file
+# replaces exactly the quarters it contains. Nothing is counted twice, and
+# nothing is lost, whichever kind of file comes in.
 
-def _lca_file(path, decided, employers):
-    """A minimal disclosure CSV: `employers` maps name -> certified count."""
+Q1, Q2, Q3, Q4 = "2025-12-15", "2026-03-15", "2026-06-15", "2026-09-15"
+
+
+def _lca_file(path, rows):
+    """A minimal disclosure CSV: one certified filing per (employer, decided)."""
     import csv
     with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["CASE_STATUS", "EMPLOYER_NAME", "JOB_TITLE", "WORKSITE_STATE",
                     "PW_WAGE_LEVEL", "DECISION_DATE"])
-        for name, n in employers.items():
-            for _ in range(n):
-                w.writerow(["Certified", name, "Software Engineer", "CA", "II", decided])
+        for name, decided in rows:
+            w.writerow(["Certified", name, "Software Engineer", "CA", "II", decided])
     return str(path)
 
 
@@ -623,40 +627,50 @@ def _employer(tmp_path, norm="acme"):
     return row
 
 
+ACME = "Acme Inc"
+
+
 def test_two_fiscal_years_add_up(monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
-    _load(_lca_file(tmp_path / "a.csv", "2025-09-30", {"Acme Inc": 3}), replace=True)
-    _load(_lca_file(tmp_path / "b.csv", "2026-06-30", {"Acme Inc": 2}))
+    _load(_lca_file(tmp_path / "a.csv", [(ACME, "2025-09-30")] * 3), replace=True)
+    _load(_lca_file(tmp_path / "b.csv", [(ACME, Q3)] * 2))
     assert _employer(tmp_path) == (5, 2025, 2026)
 
 
-def test_a_later_quarter_replaces_the_same_year(monkeypatch, tmp_path):
+def test_single_quarter_files_add_up(monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
-    _load(_lca_file(tmp_path / "q2.csv", "2026-03-31", {"Acme Inc": 2}), replace=True)
-    _load(_lca_file(tmp_path / "q3.csv", "2026-06-30", {"Acme Inc": 3}))
+    _load(_lca_file(tmp_path / "q3.csv", [(ACME, Q3)] * 2), replace=True)
+    _load(_lca_file(tmp_path / "q4.csv", [(ACME, Q4)]))
     assert _employer(tmp_path) == (3, 2026, 2026)
 
 
-def test_an_older_quarter_does_not_replace_a_newer_one(monkeypatch, tmp_path, capsys):
+def test_a_year_to_date_file_replaces_the_quarters_it_covers(monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
-    _load(_lca_file(tmp_path / "q3.csv", "2026-06-30", {"Acme Inc": 3}), replace=True)
-    _load(_lca_file(tmp_path / "q2.csv", "2026-03-31", {"Acme Inc": 2}))
+    _load(_lca_file(tmp_path / "q2.csv", [(ACME, Q1), (ACME, Q2)]), replace=True)
+    _load(_lca_file(tmp_path / "q3.csv", [(ACME, Q1), (ACME, Q2), (ACME, Q3)]))
     assert _employer(tmp_path) == (3, 2026, 2026)
-    assert "older" in capsys.readouterr().out
+
+
+def test_an_older_file_keeps_the_newer_quarters(monkeypatch, tmp_path):
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    _load(_lca_file(tmp_path / "q3.csv", [(ACME, Q1), (ACME, Q2), (ACME, Q3)]),
+          replace=True)
+    _load(_lca_file(tmp_path / "q2.csv", [(ACME, Q1), (ACME, Q2)]))
+    assert _employer(tmp_path) == (3, 2026, 2026)
 
 
 def test_reloading_the_same_file_changes_nothing(monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
-    path = _lca_file(tmp_path / "q3.csv", "2026-06-30", {"Acme Inc": 3})
+    path = _lca_file(tmp_path / "q3.csv", [(ACME, Q1), (ACME, Q3)])
     _load(path, replace=True)
     _load(path)
-    assert _employer(tmp_path) == (3, 2026, 2026)
+    assert _employer(tmp_path) == (2, 2026, 2026)
 
 
 def test_replace_starts_over(monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
-    _load(_lca_file(tmp_path / "a.csv", "2025-09-30", {"Acme Inc": 3, "Old Co": 4}),
-          replace=True)
-    _load(_lca_file(tmp_path / "b.csv", "2026-06-30", {"Acme Inc": 2}), replace=True)
+    _load(_lca_file(tmp_path / "a.csv", [(ACME, "2025-09-30")] * 3 +
+                    [("Old Co", "2025-09-30")] * 4), replace=True)
+    _load(_lca_file(tmp_path / "b.csv", [(ACME, Q3)] * 2), replace=True)
     assert _employer(tmp_path) == (2, 2026, 2026)
     assert _employer(tmp_path, "old") is None

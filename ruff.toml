@@ -1,0 +1,23 @@
+# Ruff, a fast Python linter. The Tests workflow runs `ruff check .` on every
+# pull request; run the same command locally before pushing.
+#
+# A config in the repository means everyone, CI included, checks the same
+# rules, whatever Ruff settings their own machine has.
+
+target-version = "py310"
+extend-exclude = [".venv"]
+
+[lint]
+# Pyflakes (F) for undefined and unused names, the error-level pycodestyle
+# rules Ruff enables by default (E4, E7, E9), and flake8-bugbear (B) for
+# patterns that are usually bugs.
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = [
+    "B904",  # `raise SystemExit("...")` inside except: the message is for the user, not a traceback
+    "B905",  # zip() without strict=
+    "B007",  # loop variables left unused for readable tuple unpacking
+]
+
+[lint.per-file-ignores]
+# The offline self-test is a terse script on purpose.
+"selftest.py" = ["E401", "E402", "E702"]

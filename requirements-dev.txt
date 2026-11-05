@@ -1,3 +1,5 @@
 # Test dependencies. Not needed to run sponsorscan.
 -r requirements.txt
 pytest>=8.0
+# Pinned so a new Ruff release cannot fail CI with rules nobody changed.
+ruff==0.17.4

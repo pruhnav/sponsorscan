@@ -640,7 +640,6 @@ def test_fetch_stores_the_lca_name_beside_the_display_name(monkeypatch, tmp_path
 def test_simple_report_does_not_penalise_withdrawn_filings(monkeypatch, tmp_path, capsys):
     import argparse
     import csv
-    import sqlite3
 
     monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
     con = ss.connect()

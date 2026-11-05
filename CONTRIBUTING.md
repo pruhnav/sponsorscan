@@ -23,12 +23,16 @@ source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 ```
 
-Run the tests before opening a PR:
+Run the tests and the linter before opening a PR:
 
 ```bash
 python -m pytest
 python selftest.py
+ruff check .
 ```
+
+`ruff check --fix .` fixes most findings by itself. CI also runs CodeQL,
+GitHub's security scanner; its findings show under Security > Code scanning.
 
 ## Pull requests
 

@@ -277,7 +277,7 @@ def cmd_load_lca(args):
         if n % 100_000 == 0:
             print(f"  ...{n:,} rows")
 
-        def get(key):
+        def get(key, row=row):  # bound now: the row is read on this pass only
             i = idx.get(key)
             return row[i] if i is not None and i < len(row) else None
 
@@ -971,7 +971,7 @@ def cmd_discover(args):
     print(f"{len(tasks):,} probes to run "
           f"({len(cache):,} already cached). Ctrl-C is safe, results are saved as they land.")
 
-    found, done, transient = {}, 0, 0
+    done, transient = 0, 0
     if tasks:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -1266,7 +1266,7 @@ def cmd_report(args):
             score += 20
             why.append("entry level")
 
-        if locs and any(l in (location or "").lower() for l in locs):
+        if locs and any(loc in (location or "").lower() for loc in locs):
             score += 15
             why.append("location match")
         elif locs and not args.any_location:

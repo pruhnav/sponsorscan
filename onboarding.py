@@ -30,7 +30,6 @@ import yaml
 from profile_loader import (
     DEFAULT_PROFILE,
     NO_SPONSORSHIP_NEEDED,
-    VALID_WORK_AUTHORIZATION,
     ProfileError,
     load_profile,
     validate_profile,

@@ -674,3 +674,24 @@ def test_replace_starts_over(monkeypatch, tmp_path):
     _load(_lca_file(tmp_path / "b.csv", [(ACME, Q3)] * 2), replace=True)
     assert _employer(tmp_path) == (2, 2026, 2026)
     assert _employer(tmp_path, "old") is None
+
+
+def test_load_counts_client_site_placements_and_new_hires(monkeypatch, tmp_path):
+    import csv
+    import sqlite3
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    path = tmp_path / "q3.csv"
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["CASE_STATUS", "EMPLOYER_NAME", "DECISION_DATE",
+                    "SECONDARY_ENTITY", "NEW_EMPLOYMENT"])
+        w.writerows([["Certified", "Placer Inc", "2026-06-30", "Yes", "1"],
+                     ["Certified", "Placer Inc", "2026-06-30", "Yes", "0"],
+                     ["Certified", "Placer Inc", "2026-06-30", "No", "0"],
+                     ["Certified", "Placer Inc", "2026-06-30", "No", ""]])
+    _load(str(path), replace=True)
+    con = sqlite3.connect(tmp_path / "t.db")
+    row = con.execute("SELECT secondary, new_hires FROM employers "
+                      "WHERE employer_norm = 'placer'").fetchone()
+    con.close()
+    assert row == (2, 1)

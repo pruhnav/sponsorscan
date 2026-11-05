@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS employers (
     lvl2 INTEGER DEFAULT 0,
     lvl3 INTEGER DEFAULT 0,
     lvl4 INTEGER DEFAULT 0,
+    secondary INTEGER DEFAULT 0,
+    new_hires INTEGER DEFAULT 0,
     first_fy INTEGER,
     last_fy  INTEGER
 );
@@ -117,6 +119,7 @@ CREATE TABLE IF NOT EXISTS lca_quarter_employers (
     titles TEXT,
     states TEXT,
     lvl1 INTEGER, lvl2 INTEGER, lvl3 INTEGER, lvl4 INTEGER,
+    secondary INTEGER DEFAULT 0, new_hires INTEGER DEFAULT 0,
     PRIMARY KEY (fiscal_year, quarter, employer_norm)
 );
 CREATE TABLE IF NOT EXISTS jobs (
@@ -160,9 +163,14 @@ def connect():
     for col in ("lvl1", "lvl2", "lvl3", "lvl4"):
         if col not in have:
             con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER DEFAULT 0")
-    for col in ("first_fy", "last_fy"):
+    for col in ("first_fy", "last_fy", "secondary", "new_hires"):
         if col not in have:
             con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER")
+    quarter_cols = {r[1] for r in con.execute("PRAGMA table_info(lca_quarter_employers)")}
+    for col in ("secondary", "new_hires"):
+        if col not in quarter_cols:
+            con.execute(f"ALTER TABLE lca_quarter_employers ADD COLUMN {col} "
+                        "INTEGER DEFAULT 0")
     # The name a board's employer files under at DOL, from `lca_name:` in
     # companies.yaml, when it differs from the name shown in reports.
     if "lca_name" not in {r[1] for r in con.execute("PRAGMA table_info(jobs)")}:
@@ -189,6 +197,11 @@ WANTED = {
     "wage_level": ["PW_WAGE_LEVEL", "PW_WAGE_LEVEL_1"],
     # Tells which fiscal year and quarter the file covers.
     "decided": ["DECISION_DATE"],
+    # "Yes" when the worker is placed at another company's site, the mark of
+    # a staffing or consulting firm.
+    "secondary": ["SECONDARY_ENTITY", "SECONDARY_ENTITY_1"],
+    # How many of the filing's workers are new hires rather than extensions.
+    "new_employment": ["NEW_EMPLOYMENT"],
 }
 
 # How much of each employer's title and state lists is kept per quarter.
@@ -224,15 +237,15 @@ def _rebuild_employers(con):
     """Rebuild `employers` as the sum of every quarter loaded."""
     merged = {}
     for (fy, norm, display, cert, den, wd, titles, states,
-         l1, l2, l3, l4) in con.execute(
+         l1, l2, l3, l4, sec, hires) in con.execute(
             "SELECT fiscal_year, employer_norm, employer_display, certified, denied, "
-            "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4 "
+            "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4, secondary, new_hires "
             "FROM lca_quarter_employers ORDER BY fiscal_year, quarter"):
         rec = merged.setdefault(norm, {
-            "display": display, "counts": [0] * 7, "titles": {}, "states": {},
+            "display": display, "counts": [0] * 9, "titles": {}, "states": {},
             "years": []})
         rec["display"] = display  # the latest year's spelling, read last
-        for i, v in enumerate((cert, den, wd, l1, l2, l3, l4)):
+        for i, v in enumerate((cert, den, wd, l1, l2, l3, l4, sec, hires)):
             rec["counts"][i] += v or 0
         for field, raw in (("titles", titles), ("states", states)):
             for k, v in json.loads(raw or "{}").items():
@@ -243,12 +256,12 @@ def _rebuild_employers(con):
     con.execute("DELETE FROM employers")
     con.executemany(
         "INSERT INTO employers (employer_norm, employer_display, certified, denied, "
-        "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4, first_fy, last_fy) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4, secondary, new_hires, "
+        "first_fy, last_fy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(norm, rec["display"], *rec["counts"][:3],
           json.dumps(list(_top(rec["titles"], 12))),
           json.dumps(list(_top(rec["states"], 8))),
-          *rec["counts"][3:],
+          *rec["counts"][3:9],
           min(rec["years"]) if rec["years"] else None,
           max(rec["years"]) if rec["years"] else None)
          for norm, rec in merged.items()])
@@ -382,7 +395,7 @@ def cmd_load_lca(args):
         rec = agg.setdefault(quarter, {}).setdefault(key, {
             "display": str(emp).strip(), "certified": 0, "denied": 0,
             "withdrawn": 0, "titles": {}, "states": {},
-            "lvl": {1: 0, 2: 0, 3: 0, 4: 0},
+            "lvl": {1: 0, 2: 0, 3: 0, 4: 0}, "secondary": 0, "new_hires": 0,
         })
 
         status = (str(get("status")) or "").strip().upper()
@@ -408,6 +421,13 @@ def cmd_load_lca(args):
                  "1": 1, "2": 2, "3": 3, "4": 4}.get(lvl)
         if lvl_n:
             rec["lvl"][lvl_n] += 1
+        if str(get("secondary") or "").strip().upper() in ("Y", "YES"):
+            rec["secondary"] += 1
+        try:
+            if float(get("new_employment") or 0) > 0:
+                rec["new_hires"] += 1
+        except ValueError:
+            pass
 
     print(f"Read {n:,} rows, {len({k for e in agg.values() for k in e}):,} "
           f"distinct employers.")
@@ -430,12 +450,14 @@ def cmd_load_lca(args):
         con.executemany(
             "INSERT INTO lca_quarter_employers (fiscal_year, quarter, employer_norm, "
             "employer_display, certified, denied, withdrawn, titles, states, "
-            "lvl1, lvl2, lvl3, lvl4) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "lvl1, lvl2, lvl3, lvl4, secondary, new_hires) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [(fiscal_year, quarter, key, rec["display"], rec["certified"],
               rec["denied"], rec["withdrawn"],
               json.dumps(_top(rec["titles"], _YEAR_TITLES)),
               json.dumps(_top(rec["states"], _YEAR_STATES)),
-              rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4])
+              rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4],
+              rec["secondary"], rec["new_hires"])
              for key, rec in employers.items()])
         con.execute("INSERT OR REPLACE INTO lca_quarters VALUES (?, ?, ?, ?)",
                     (fiscal_year, quarter, os.path.basename(src),

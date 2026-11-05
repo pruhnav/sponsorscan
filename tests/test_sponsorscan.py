@@ -635,3 +635,32 @@ def test_fetch_stores_the_lca_name_beside_the_display_name(monkeypatch, tmp_path
     row = con.execute("SELECT company, company_norm, lca_name FROM jobs").fetchone()
     con.close()
     assert row == ("Instacart", "instacart", "Maplebear")
+
+
+def test_simple_report_does_not_penalise_withdrawn_filings(monkeypatch, tmp_path, capsys):
+    import argparse
+    import csv
+    import sqlite3
+
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    con = ss.connect()
+    con.executemany(
+        "INSERT INTO employers (employer_norm, employer_display, certified, denied, "
+        "withdrawn, titles, states) VALUES (?,?,?,?,?,?,?)",
+        [("steady", "Steady Inc", 100, 0, 0, "[]", "[]"),
+         ("churn", "Churn Inc", 100, 0, 60, "[]", "[]")])
+    con.executemany(
+        "INSERT INTO jobs (job_key, source, company, company_norm, title, location, url, "
+        "posted, description) VALUES (?,?,?,?,?,?,?,?,?)",
+        [(f"t:{n}", "test", n.title(), n, "Software Engineer", "Austin, TX",
+          f"https://example.com/{n}", "2026-11-04", "Python.") for n in ("steady", "churn")])
+    con.commit()
+    con.close()
+
+    out = tmp_path / "r.csv"
+    ss.cmd_report(argparse.Namespace(locations="", any_location=True, include_senior=False,
+                                     sponsors_only=False, fuzzy_cutoff=90, top=0,
+                                     out=str(out)))
+    with open(out, encoding="utf-8-sig", newline="") as fh:
+        scores = {r["company"]: r["score"] for r in csv.DictReader(fh)}
+    assert scores["Churn"] == scores["Steady"]

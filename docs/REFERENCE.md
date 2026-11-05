@@ -255,7 +255,6 @@ preflight step in CI.
 | Employer has certified LCAs | +40 |
 | 25 or more certified | +10 |
 | Half or more filings at prevailing wage Level III/IV | +10 |
-| A quarter or more filings denied or withdrawn | -10 |
 | Has filed for a similar job title | +15 |
 | Entry-level title | +20 |
 | Location match | +15 |
@@ -576,7 +575,10 @@ Two CSV columns are especially useful:
 
 - `lca_senior_wage_share`: the share of filings at prevailing wage Level III/IV.
 - `lca_denied_withdrawn_rate`: the share of filings that were denied or
-  withdrawn.
+  withdrawn. It is shown for information and does not lower the score. A
+  withdrawal usually means the candidate took another offer or the role closed,
+  and large sponsors withdraw certified filings routinely, so a high rate does
+  not mean an employer avoids sponsoring.
 
 Judge employers using those signals rather than company name alone.
 

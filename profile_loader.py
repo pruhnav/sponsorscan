@@ -56,6 +56,9 @@ DEFAULT_PROFILE: dict[str, Any] = {
     "reject_citizenship_required": True,
     "reject_permanent_authorization_required": True,
     "reject_opt_excluded": True,
+    # "Unable to sponsor now or in the future". Applies only to a profile that
+    # needs sponsorship; a citizen's profile can leave it on harmlessly.
+    "reject_no_future_sponsorship": True,
     "target_roles": [],
     "skills": {},
     "preferred_locations": [],
@@ -184,6 +187,7 @@ def validate_profile(profile: dict[str, Any]) -> None:
         "reject_citizenship_required",
         "reject_permanent_authorization_required",
         "reject_opt_excluded",
+        "reject_no_future_sponsorship",
     ):
         _require_type(profile, key, bool)
 

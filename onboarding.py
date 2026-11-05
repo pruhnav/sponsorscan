@@ -31,9 +31,11 @@ from profile_loader import (
     DEFAULT_PROFILE,
     NO_SPONSORSHIP_NEEDED,
     ProfileError,
+    authorization_warnings,
     load_profile,
     validate_profile,
 )
+from skill_patterns import SKILL_PATTERNS
 
 # Postings older than this suggest the jobs table predates the current run.
 STALE_AFTER_DAYS = 7
@@ -307,13 +309,7 @@ def check_database(path, profile=None) -> CheckResult:
 
 
 def warn_authorization(profile) -> CheckResult:
-    """Surface contradictions between work_authorization and the reject_ flags.
-
-    Imported lazily: sponsor_daily_report imports sponsorscan, which imports
-    this module, so a module-level import would close the cycle.
-    """
-    from sponsor_daily_report import authorization_warnings
-
+    """Surface contradictions between work_authorization and the reject_ flags."""
     warnings = authorization_warnings(profile)
     if warnings:
         return CheckResult("Authorization", "WARN", " ".join(warnings))
@@ -818,13 +814,7 @@ def local_filename_for(url) -> str:
 # --------------------------------------------------- skill vocabulary guidance
 
 def known_skill_names() -> tuple[str, ...]:
-    """The skill names the scorer has hand-written patterns for.
-
-    Imported lazily for the same reason as warn_authorization: sponsor_daily_report
-    imports sponsorscan, which imports this module.
-    """
-    from sponsor_daily_report import SKILL_PATTERNS
-
+    """The skill names the scorer has hand-written patterns for."""
     return tuple(SKILL_PATTERNS)
 
 
@@ -852,8 +842,6 @@ def suggest_skill(name) -> str | None:
     to work without it.
     """
     import difflib
-
-    from sponsor_daily_report import SKILL_PATTERNS
 
     text = str(name).strip()
     if not text:

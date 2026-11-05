@@ -57,7 +57,8 @@ The OPT example includes these defaults:
   "reject_clearance_roles": true,
   "reject_citizenship_required": true,
   "reject_permanent_authorization_required": true,
-  "reject_opt_excluded": true
+  "reject_opt_excluded": true,
+  "reject_no_future_sponsorship": true
 }
 ```
 
@@ -69,6 +70,7 @@ The OPT example includes these defaults:
 | `reject_citizenship_required` | Reject jobs requiring U.S. citizenship |
 | `reject_permanent_authorization_required` | Reject jobs requiring permanent or unrestricted work authorization |
 | `reject_opt_excluded` | Reject postings that explicitly exclude OPT, STEM OPT, or CPT candidates |
+| `reject_no_future_sponsorship` | Reject postings that refuse sponsorship "now or in the future". OPT ends, so such a job cannot lead to an H-1B, and the application's "will you now or in the future require sponsorship?" question gets an automatic no. Set it to false to keep them, for example if a job for the length of your OPT is enough |
 
 A generic statement such as:
 
@@ -81,6 +83,10 @@ candidate may already have temporary employment authorization and may not need
 immediate sponsorship.
 
 SponsorScan should still reject language such as:
+
+```text
+We are unable to sponsor now or in the future.
+```
 
 ```text
 OPT candidates are not eligible.

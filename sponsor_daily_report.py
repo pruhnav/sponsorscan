@@ -406,6 +406,11 @@ SPONSOR_POS_RE = [re.compile(p, re.I) for p in SPONSOR_POSITIVE]
 
 # Each authorization check, keyed by the profile flag that enables it.
 AUTHORIZATION_CHECKS = {
+    # Refuses sponsorship now or later: the first four DISQUALIFIERS. A plain
+    # "we do not sponsor" stays allowed, because OPT is already authorization;
+    # this wording also rules out the H-1B that has to follow it, and the
+    # application's "now or in the future" question gets an automatic no.
+    "reject_no_future_sponsorship": DISQ_RE[:4],
     "reject_opt_excluded": [
         re.compile(r"\b(?:opt|stem opt|cpt)\b[^.\n]{0,100}"
                    r"\b(?:not accepted|not eligible|not supported|"
@@ -444,6 +449,9 @@ def violates_work_authorization(blob, profile):
         pattern.search(blob)
         for flag, patterns in AUTHORIZATION_CHECKS.items()
         if profile.get(flag, True)
+        # A refusal to sponsor cannot disqualify someone who never needs it,
+        # whatever an older citizen profile's defaults say.
+        and (flag != "reject_no_future_sponsorship" or needs_sponsorship(profile))
         for pattern in patterns
     )
 

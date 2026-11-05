@@ -103,7 +103,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     url          TEXT,
     posted       TEXT,
     description  TEXT,
-    fetched_at   TEXT
+    fetched_at   TEXT,
+    lca_name     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_norm ON jobs(company_norm);
 CREATE TABLE IF NOT EXISTS fetched_companies (
@@ -133,6 +134,10 @@ def connect():
     for col in ("lvl1", "lvl2", "lvl3", "lvl4"):
         if col not in have:
             con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER DEFAULT 0")
+    # The name a board's employer files under at DOL, from `lca_name:` in
+    # companies.yaml, when it differs from the name shown in reports.
+    if "lca_name" not in {r[1] for r in con.execute("PRAGMA table_info(jobs)")}:
+        con.execute("ALTER TABLE jobs ADD COLUMN lca_name TEXT")
     # A Workday guess is a tenant name; the board it resolves to is stored here.
     if "resolved" not in {r[1] for r in con.execute("PRAGMA table_info(probe_cache)")}:
         con.execute("ALTER TABLE probe_cache ADD COLUMN resolved TEXT")
@@ -603,9 +608,11 @@ def cmd_fetch_jobs(args):
             print(f"  ! unknown provider '{provider}', skipping")
             continue
         for entry in entries or []:
+            lca_name = None
             if isinstance(entry, dict):
                 slug = entry.get("slug")
                 display = entry.get("name") or slug
+                lca_name = entry.get("lca_name")
             else:
                 slug, display = entry, entry
             try:
@@ -624,12 +631,12 @@ def cmd_fetch_jobs(args):
             rows = [(
                 j["job_key"], j["source"], display, norm_employer(display),
                 j["title"], j["location"], j["url"], j["posted"],
-                j["description"][:20000], time.strftime("%Y-%m-%d %H:%M"),
+                j["description"][:20000], time.strftime("%Y-%m-%d %H:%M"), lca_name,
             ) for j in jobs]
             con.executemany(
                 "INSERT OR REPLACE INTO jobs (job_key, source, company, company_norm, "
-                "title, location, url, posted, description, fetched_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+                "title, location, url, posted, description, fetched_at, lca_name) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
             # The report baselines employers it has not tracked before. A board
             # that answered with no postings is tracked all the same, so its
             # first real opening is reported rather than silenced.
@@ -1136,16 +1143,27 @@ def load_employer_index(con):
 
 
 def match_employer(company_norm, index, keys, cutoff):
-    """Exact key match, then fuzzy fallback."""
-    if company_norm in index:
-        return company_norm, 100
-    if not HAVE_RAPIDFUZZ or not keys or cutoff <= 0:
+    """The DOL employer a board's company name stands for, as (key, score).
+
+    Every name tied for the best score is a candidate, the exact key included,
+    and the one with the most certified LCAs wins. DOL lists stub filers under
+    bare brand names beside the entity that does the company's real filing:
+    "AMAZON" with 2 certified LCAs next to Amazon.com Services LLC with 92,132.
+    Taking the exact key, or the first fuzzy hit in table order, lands on the
+    stub. Where a brand and its legal name share no words (Instacart files as
+    Maplebear), set `lca_name:` in companies.yaml instead.
+    """
+    candidates = [(company_norm, 100)] if company_norm in index else []
+    if HAVE_RAPIDFUZZ and keys and cutoff > 0:
+        candidates += [(key, int(score)) for key, score, _ in rf_process.extract(
+            company_norm, keys, scorer=rf_fuzz.token_set_ratio,
+            score_cutoff=cutoff, limit=None)]
+    if not candidates:
         return None, 0
-    hit = rf_process.extractOne(
-        company_norm, keys, scorer=rf_fuzz.token_set_ratio, score_cutoff=cutoff)
-    if hit:
-        return hit[0], int(hit[1])
-    return None, 0
+    top = max(score for _, score in candidates)
+    best = max((key for key, score in candidates if score == top),
+               key=lambda k: (index[k].get("certified") or 0, k == company_norm, k))
+    return best, top
 
 
 def cmd_report(args):
@@ -1159,9 +1177,9 @@ def cmd_report(args):
     results, dropped = [], 0
 
     for row in con.execute(
-            "SELECT company, company_norm, title, location, url, posted, description, source "
-            "FROM jobs"):
-        company, cnorm, title, location, url, posted, desc, source = row
+            "SELECT company, company_norm, title, location, url, posted, description, source, "
+            "lca_name FROM jobs"):
+        company, cnorm, title, location, url, posted, desc, source, lca_name = row
         blob = f"{title}\n{desc}"
 
         hit = next((p.pattern for p in DISQ_RE if p.search(blob)), None)
@@ -1174,7 +1192,8 @@ def cmd_report(args):
 
         score, why = 0, []
 
-        key, conf = match_employer(cnorm, index, keys, args.fuzzy_cutoff)
+        key, conf = match_employer(norm_employer(lca_name) if lca_name else cnorm,
+                                   index, keys, args.fuzzy_cutoff)
         emp = index.get(key) if key else None
         if emp and emp["certified"] > 0:
             score += 40

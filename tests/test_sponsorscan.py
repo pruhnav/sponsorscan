@@ -583,3 +583,55 @@ def test_workday_unknown_tenant_is_a_definite_miss(monkeypatch):
 def test_workday_transient_errors_are_not_a_miss(monkeypatch, status):
     _workday_server(monkeypatch, "acme", "wd1", "external", other=status)
     assert ss.find_workday_board("acme", "Acme") == (None, None, 0)
+
+
+# ------------------------------------------------------- employer matching
+#
+# Shapes from real DOL data: a brand-named stub filer next to the legal entity
+# that does the company's actual filing.
+
+def _index(**certified):
+    return {name.replace("_", " "): {"certified": n} for name, n in certified.items()}
+
+
+def test_brand_name_resolves_to_the_heavier_filer_not_a_same_name_stub():
+    index = _index(amazon=2, amazon_com_services=92132)
+    assert ss.match_employer("amazon", index, list(index), 90)[0] == "amazon com services"
+
+
+@pytest.mark.parametrize("order", [1, -1])
+def test_match_does_not_depend_on_row_order(order):
+    index = _index(meta_4=0, meta_platforms=38117)
+    keys = list(index)[::order]
+    assert ss.match_employer("meta", index, keys, 90)[0] == "meta platforms"
+
+
+def test_exact_name_beats_a_heavier_near_miss():
+    index = _index(databricks=120, databrick_solutions=5000)
+    assert ss.match_employer("databricks", index, list(index), 90) == ("databricks", 100)
+
+
+def test_fetch_stores_the_lca_name_beside_the_display_name(monkeypatch, tmp_path):
+    import argparse
+    import sqlite3
+
+    def board(slug):
+        return [{"job_key": "greenhouse:instacart:1", "source": "greenhouse",
+                 "title": "Software Engineer", "location": "San Francisco, CA",
+                 "url": "https://instacart.careers/job/?gh_jid=1",
+                 "posted": "2024-10-04", "description": "Python."}]
+
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(ss, "FETCHERS", {"greenhouse": board})
+    companies = tmp_path / "companies.yaml"
+    companies.write_text(
+        "companies:\n  greenhouse:\n"
+        "    - {slug: instacart, name: Instacart, lca_name: Maplebear}\n",
+        encoding="utf-8")
+    ss.cmd_fetch_jobs(argparse.Namespace(companies=str(companies), replace=True, delay=0,
+                                          workday_days=3))
+
+    con = sqlite3.connect(tmp_path / "t.db")
+    row = con.execute("SELECT company, company_norm, lca_name FROM jobs").fetchone()
+    con.close()
+    assert row == ("Instacart", "instacart", "Maplebear")

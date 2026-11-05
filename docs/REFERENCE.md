@@ -378,6 +378,20 @@ match a company equally well, the one with the most certified LCAs wins, so
 just "AMAZON". The `lca_employer` column of the CSV names the DOL employer each
 job was matched to.
 
+Three more columns describe that employer's filings. They are shown, not
+scored, so you can judge for yourself:
+
+| Column | Meaning |
+|---|---|
+| `lca_years` | The fiscal years with filings among those loaded, such as `FY2025-FY2026` |
+| `lca_client_site_share` | Share of filings that place the worker at another company's site, the mark of a staffing or consulting firm. At 50% or more, `why_ranked` says so |
+| `lca_new_hire_share` | Share of filings for new hires rather than extensions. A new grad needs an employer that files for new hires, not only renewals |
+
+`why_ranked` also says "no filings since FY…" when an employer's last filing is
+two or more fiscal years before the newest loaded. These need a database loaded
+by this version of `load-lca`; an older one shows them empty until it is loaded
+again.
+
 ## Work-authorization configurations
 
 Work-authorization filtering should be configured separately from resume

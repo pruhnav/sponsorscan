@@ -779,10 +779,15 @@ def career_level_score(title, description, profile=None):
 
 
 def load_employers(con):
+    # Columns added by later versions of load-lca read as empty in an older
+    # database, until it is loaded again.
     try:
+        have = {r[1] for r in con.execute("PRAGMA table_info(employers)")}
+        extra = ", ".join(col if col in have else f"NULL AS {col}"
+                          for col in ("secondary", "new_hires", "first_fy", "last_fy"))
         rows = con.execute(
             "SELECT employer_norm, employer_display, certified, denied, withdrawn, "
-            "titles, states, lvl1, lvl2, lvl3, lvl4 FROM employers"
+            f"titles, states, lvl1, lvl2, lvl3, lvl4, {extra} FROM employers"
         ).fetchall()
     except sqlite3.OperationalError as exc:
         raise SystemExit(f"Could not read employers table: {exc}")
@@ -799,10 +804,51 @@ def load_employers(con):
         output[row[0]] = {
             "display": row[1],
             "certified": row[2] or 0,
+            "filed": (row[2] or 0) + (row[3] or 0) + (row[4] or 0),
             "titles": [str(x).lower() for x in titles],
             "senior_share": ((levels[2] + levels[3]) / level_total) if level_total else None,
+            "secondary": row[11], "new_hires": row[12],
+            "first_fy": row[13], "last_fy": row[14],
         }
     return output
+
+
+def latest_fiscal_year(con):
+    """The newest fiscal year loaded, or None for a database without years."""
+    try:
+        return con.execute("SELECT MAX(fiscal_year) FROM lca_quarters").fetchone()[0] or None
+    except sqlite3.OperationalError:
+        return None
+
+
+def employer_signals(emp, current_fy):
+    """Facts about an employer's filings, for the CSV and `why_ranked`.
+
+    Shown, not scored, so the user can judge: a staffing firm suits some
+    candidates, and a share of new hires says more to a new grad than volume.
+    `current_fy` is the newest fiscal year loaded.
+    """
+    blank = {"lca_years": "", "lca_client_site_share": "", "lca_new_hire_share": "",
+             "notes": []}
+    if not emp:
+        return blank
+    signals = dict(blank, notes=[])
+    first, last = emp.get("first_fy"), emp.get("last_fy")
+    if first and last:
+        signals["lca_years"] = f"FY{first}" if first == last else f"FY{first}-FY{last}"
+    filed = emp.get("filed") or 0
+    if filed and emp.get("secondary") is not None:
+        share = round(emp["secondary"] / filed, 2)
+        signals["lca_client_site_share"] = share
+        if share >= 0.5:
+            signals["notes"].append(
+                f"most filings place workers at client sites ({round(share * 100)}%)")
+    if filed and emp.get("new_hires") is not None:
+        signals["lca_new_hire_share"] = round(emp["new_hires"] / filed, 2)
+    # Two fiscal years without a filing, as career-ops counts a stale sponsor.
+    if last and current_fy and last <= current_fy - 2:
+        signals["notes"].append(f"no filings since FY{last}")
+    return signals
 
 
 # What a job scores on sponsorship when the candidate does not need it. Filing
@@ -978,7 +1024,8 @@ CSV_FIELDS = [
     "sponsorship_score", "is_new_since_last_run", "role_family",
     "matched_resume_skills", "experience_years_detected", "company",
     "title", "location", "posted", "source", "why_ranked", "url",
-    "lca_certified", "lca_employer", "job_key",
+    "lca_certified", "lca_employer", "lca_years", "lca_client_site_share",
+    "lca_new_hire_share", "job_key",
 ]
 
 DROPPED_FIELDS = ["company", "title", "location", "posted", "reason", "source", "url",
@@ -1066,6 +1113,7 @@ def main():
     con = sqlite3.connect(db_path)
     try:
         employers = load_employers(con)
+        current_fy = latest_fiscal_year(con)
         try:
             # lca_name arrived after the jobs table; a database last written by
             # an older fetch-jobs simply has none.
@@ -1226,6 +1274,9 @@ def main():
         reasons.extend(bonus_signals)
         reasons.extend(level_signals)
         reasons.extend(sponsor_signals)
+        filing_facts = employer_signals(emp, current_fy)
+        if needs_sponsorship(profile):
+            reasons.extend(filing_facts["notes"])
         if verdict == "unclear":
             reasons.append("location unclear, check it is in the US")
 
@@ -1252,6 +1303,9 @@ def main():
             # Shown even on an exact match, where a stub filer would otherwise
             # pass unnoticed.
             "lca_employer": emp["display"] if emp else "",
+            "lca_years": filing_facts["lca_years"],
+            "lca_client_site_share": filing_facts["lca_client_site_share"],
+            "lca_new_hire_share": filing_facts["lca_new_hire_share"],
             "job_key": key,
             "_posted_ts": parsed_posted.timestamp() if parsed_posted else 0.0,
         })

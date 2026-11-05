@@ -545,3 +545,27 @@ def test_withdrawn_or_denied_filings_do_not_lower_the_score():
     churn = sdr.sponsorship_score(dict(HEAVY_FILER, trouble_rate=0.6),
                                   "Software Engineer", "", profile=opt)
     assert churn == clean
+
+
+# ------------------------------------------------------ employer signals
+
+def test_signals_name_years_client_sites_and_new_hires():
+    emp = dict(HEAVY_FILER, filed=100, secondary=60, new_hires=25,
+               first_fy=2024, last_fy=2026)
+    signals = sdr.employer_signals(emp, current_fy=2026)
+    assert signals["lca_years"] == "FY2024-FY2026"
+    assert signals["lca_client_site_share"] == 0.6
+    assert signals["lca_new_hire_share"] == 0.25
+    assert "most filings place workers at client sites (60%)" in signals["notes"]
+
+
+def test_a_sponsor_that_stopped_filing_is_flagged():
+    emp = dict(HEAVY_FILER, filed=10, secondary=0, new_hires=5,
+               first_fy=2023, last_fy=2024)
+    assert "no filings since FY2024" in sdr.employer_signals(emp, current_fy=2026)["notes"]
+
+
+def test_signals_are_blank_without_an_employer():
+    signals = sdr.employer_signals(None, current_fy=2026)
+    assert signals == {"lca_years": "", "lca_client_site_share": "",
+                       "lca_new_hire_share": "", "notes": []}

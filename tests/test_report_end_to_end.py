@@ -207,13 +207,6 @@ def test_first_sighting_of_a_company_is_a_silent_baseline(workspace):
     assert new_titles(workspace) == {("Stripe", "Data Engineer, New Grad")}
 
 
-def test_first_sighting_of_a_company_on_a_feed_is_new(workspace):
-    run_report(workspace)
-    add_job(workspace, 100, "Stripe", description="", source="speedyapply")
-    run_report(workspace)
-    assert new_titles(workspace) == {("Stripe", "Software Engineer, New Grad")}
-
-
 def test_company_fetched_with_no_postings_is_already_tracked(workspace):
     run_report(workspace)
     con = sqlite3.connect(workspace / "sponsorscan.db")

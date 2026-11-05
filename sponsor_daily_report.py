@@ -27,8 +27,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from profile_loader import ProfileError, load_profile, describe_profile, needs_sponsorship
-from sponsorscan import (FEED_SOURCES, HAVE_RAPIDFUZZ, is_senior_title, match_employer,
-                         norm_employer)
+from sponsorscan import HAVE_RAPIDFUZZ, is_senior_title, match_employer, norm_employer
 
 DB_PATH = Path(os.environ.get("SPONSORSCAN_DB", "sponsorscan.db"))
 DEFAULT_STATE = Path(".sponsorscan_state.json")
@@ -1122,11 +1121,10 @@ def main():
 
         # An employer seen for the first time has its whole board looking new,
         # usually months-old postings. Record those quietly; alerts start from
-        # its next genuine opening. A feed only lists recent postings and names
-        # new employers all the time, so its rows are never baselined.
+        # its next genuine opening.
         if key in seen or seen_under_url:
             is_new = False
-        elif (source not in FEED_SOURCES and tracked_companies is not None
+        elif (tracked_companies is not None
               and company_norm not in tracked_companies):
             is_new = False
             baselined[company_norm] = baselined.get(company_norm, 0) + 1

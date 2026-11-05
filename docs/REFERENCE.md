@@ -47,6 +47,26 @@ states in which they filed.
 
 Re-run this step when the DOL publishes a new quarterly disclosure file.
 
+### Combining several years
+
+One file covers one fiscal year (October to September), so more history means
+more files. Load the first with `--replace` and the rest without it:
+
+```powershell
+python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2025_Q4.xlsx" --replace
+python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2026_Q3.xlsx"
+```
+
+Different years add up. Within a year, each quarterly file already includes the
+earlier quarters (the Q3 file holds every decision from October through June),
+so a newer quarter replaces an older one of the same year rather than adding to
+it, and an older quarter loaded after a newer one is skipped. Loading the same
+file twice changes nothing. The year comes from the file's decision dates, so a
+renamed file still lands in the right place.
+
+Q4 is the complete year, so FY2025 Q4 plus the latest FY2026 file gives about
+two years of filings.
+
 ### Resolving the file automatically
 
 ```powershell

@@ -36,6 +36,7 @@ import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import requests
 import yaml
@@ -90,7 +91,29 @@ CREATE TABLE IF NOT EXISTS employers (
     lvl1 INTEGER DEFAULT 0,
     lvl2 INTEGER DEFAULT 0,
     lvl3 INTEGER DEFAULT 0,
-    lvl4 INTEGER DEFAULT 0
+    lvl4 INTEGER DEFAULT 0,
+    first_fy INTEGER,
+    last_fy  INTEGER
+);
+-- One row per fiscal year loaded, and the employers of that year. DOL's
+-- quarterly files are cumulative within a fiscal year, so a year holds the
+-- latest quarter loaded for it. `employers` is rebuilt from these as the sum
+-- across years. Fiscal year 0 holds a file whose decision dates were missing.
+CREATE TABLE IF NOT EXISTS lca_years (
+    fiscal_year INTEGER PRIMARY KEY,
+    quarter     INTEGER,
+    source      TEXT,
+    loaded_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS lca_year_employers (
+    fiscal_year      INTEGER,
+    employer_norm    TEXT,
+    employer_display TEXT,
+    certified INTEGER, denied INTEGER, withdrawn INTEGER,
+    titles TEXT,
+    states TEXT,
+    lvl1 INTEGER, lvl2 INTEGER, lvl3 INTEGER, lvl4 INTEGER,
+    PRIMARY KEY (fiscal_year, employer_norm)
 );
 CREATE TABLE IF NOT EXISTS jobs (
     job_key      TEXT PRIMARY KEY,
@@ -133,6 +156,9 @@ def connect():
     for col in ("lvl1", "lvl2", "lvl3", "lvl4"):
         if col not in have:
             con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER DEFAULT 0")
+    for col in ("first_fy", "last_fy"):
+        if col not in have:
+            con.execute(f"ALTER TABLE employers ADD COLUMN {col} INTEGER")
     # The name a board's employer files under at DOL, from `lca_name:` in
     # companies.yaml, when it differs from the name shown in reports.
     if "lca_name" not in {r[1] for r in con.execute("PRAGMA table_info(jobs)")}:
@@ -157,7 +183,72 @@ WANTED = {
     # petitions filed at Level III/IV get better lottery odds, so an employer's
     # typical level directly affects your chances, not just your pay.
     "wage_level": ["PW_WAGE_LEVEL", "PW_WAGE_LEVEL_1"],
+    # Tells which fiscal year and quarter the file covers.
+    "decided": ["DECISION_DATE"],
 }
+
+# How much of each employer's title and state lists is kept per fiscal year.
+_YEAR_TITLES, _YEAR_STATES = 40, 20
+
+
+def _fiscal_quarter(value):
+    """(fiscal_year, quarter) of a decision date, or None when unreadable.
+
+    The federal fiscal year starts on 1 October, so 30 June 2026 is FY2026 Q3.
+    """
+    if isinstance(value, datetime):
+        day = value
+    else:
+        text = str(value or "").strip()[:10]
+        for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+            try:
+                day = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    fiscal_year = day.year + 1 if day.month >= 10 else day.year
+    return fiscal_year, (day.month - 10) % 12 // 3 + 1
+
+
+def _top(counts, n):
+    return dict(sorted(counts.items(), key=lambda kv: -kv[1])[:n])
+
+
+def _rebuild_employers(con):
+    """Rebuild `employers` as the sum of every fiscal year loaded."""
+    merged = {}
+    for (fy, norm, display, cert, den, wd, titles, states,
+         l1, l2, l3, l4) in con.execute(
+            "SELECT fiscal_year, employer_norm, employer_display, certified, denied, "
+            "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4 "
+            "FROM lca_year_employers ORDER BY fiscal_year"):
+        rec = merged.setdefault(norm, {
+            "display": display, "counts": [0] * 7, "titles": {}, "states": {},
+            "years": []})
+        rec["display"] = display  # the latest year's spelling, read last
+        for i, v in enumerate((cert, den, wd, l1, l2, l3, l4)):
+            rec["counts"][i] += v or 0
+        for field, raw in (("titles", titles), ("states", states)):
+            for k, v in json.loads(raw or "{}").items():
+                rec[field][k] = rec[field].get(k, 0) + v
+        if fy:
+            rec["years"].append(fy)
+
+    con.execute("DELETE FROM employers")
+    con.executemany(
+        "INSERT INTO employers (employer_norm, employer_display, certified, denied, "
+        "withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4, first_fy, last_fy) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(norm, rec["display"], *rec["counts"][:3],
+          json.dumps(list(_top(rec["titles"], 12))),
+          json.dumps(list(_top(rec["states"], 8))),
+          *rec["counts"][3:],
+          min(rec["years"]) if rec["years"] else None,
+          max(rec["years"]) if rec["years"] else None)
+         for norm, rec in merged.items()])
+    return len(merged)
 
 
 def _resolve_columns(header):
@@ -258,11 +349,8 @@ def cmd_load_lca(args):
     if not os.path.exists(src):
         raise SystemExit(f"No such file: {src}")
 
-    con = connect()
-    if args.replace:
-        con.execute("DELETE FROM employers")
-
     agg = {}
+    newest = None  # (fiscal_year, quarter) of the latest decision in the file
     rows = _iter_rows(src)
     try:
         header = next(rows)
@@ -316,28 +404,53 @@ def cmd_load_lca(args):
                  "1": 1, "2": 2, "3": 3, "4": 4}.get(lvl)
         if lvl_n:
             rec["lvl"][lvl_n] += 1
+        decided = _fiscal_quarter(get("decided"))
+        if decided and (newest is None or decided > newest):
+            newest = decided
 
     print(f"Read {n:,} rows, {len(agg):,} distinct employers.")
+    fiscal_year, quarter = newest or (0, 0)
+    label = f"FY{fiscal_year} Q{quarter}" if fiscal_year else "a file with no decision dates"
 
-    payload = []
-    for key, rec in agg.items():
-        top_titles = sorted(rec["titles"].items(), key=lambda kv: -kv[1])[:12]
-        top_states = sorted(rec["states"].items(), key=lambda kv: -kv[1])[:8]
-        payload.append((
-            key, rec["display"], rec["certified"], rec["denied"], rec["withdrawn"],
-            json.dumps([t for t, _ in top_titles]),
-            json.dumps([s for s, _ in top_states]),
-            rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4],
-        ))
+    # Nothing in the database changes until the whole file has been read.
+    con = connect()
+    loaded = {fy: q for fy, q in con.execute("SELECT fiscal_year, quarter FROM lca_years")}
+    if not args.replace and fiscal_year and loaded.get(fiscal_year, 0) > quarter:
+        con.close()
+        print(f"Not loaded: the database already has FY{fiscal_year} "
+              f"Q{loaded[fiscal_year]}, and this file is {label}, an older quarter of "
+              "the same year. Each quarterly file includes the earlier ones.")
+        return
+    # Employers loaded before years were tracked cannot be combined with others.
+    legacy = not loaded and con.execute("SELECT COUNT(*) FROM employers").fetchone()[0]
+    if args.replace or legacy:
+        if legacy and not args.replace:
+            print("The employer data already loaded predates multi-year loading, so "
+                  "this file replaces it. Load your other files again to combine them.")
+        for table in ("employers", "lca_years", "lca_year_employers"):
+            con.execute(f"DELETE FROM {table}")
 
+    con.execute("DELETE FROM lca_year_employers WHERE fiscal_year = ?", (fiscal_year,))
     con.executemany(
-        "INSERT OR REPLACE INTO employers "
-        "(employer_norm, employer_display, certified, denied, withdrawn, titles, states, "
-        " lvl1, lvl2, lvl3, lvl4) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)", payload)
+        "INSERT INTO lca_year_employers (fiscal_year, employer_norm, employer_display, "
+        "certified, denied, withdrawn, titles, states, lvl1, lvl2, lvl3, lvl4) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(fiscal_year, key, rec["display"], rec["certified"], rec["denied"],
+          rec["withdrawn"], json.dumps(_top(rec["titles"], _YEAR_TITLES)),
+          json.dumps(_top(rec["states"], _YEAR_STATES)),
+          rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4])
+         for key, rec in agg.items()])
+    con.execute("INSERT OR REPLACE INTO lca_years VALUES (?, ?, ?, ?)",
+                (fiscal_year, quarter, os.path.basename(src),
+                 time.strftime("%Y-%m-%d %H:%M")))
+    total = _rebuild_employers(con)
+    years = [fy for (fy,) in con.execute(
+        "SELECT fiscal_year FROM lca_years WHERE fiscal_year > 0 ORDER BY fiscal_year")]
     con.commit()
     con.close()
-    print(f"Loaded {len(payload):,} employers into {DB_PATH}")
+    covered = f", covering FY{years[0]}-FY{years[-1]}" if len(years) > 1 else ""
+    print(f"Loaded {label}: {len(agg):,} employers. {DB_PATH} now holds "
+          f"{total:,} employers{covered}.")
 
 
 # ------------------------------------------------------------------ fetch-jobs

@@ -263,6 +263,27 @@ preflight step in CI.
 Anything hitting a disqualifier is dropped before scoring, not penalized.
 Disqualifiers in the standard report include citizenship requirements, security
 clearance, ITAR/export-control restrictions, and sponsorship-negation language.
+A restriction stated in the negative ("this role does not require a security
+clearance") does not count, and neither does export-control boilerplate ("may be
+subject to U.S. export control laws"); a requirement to work with
+export-controlled material does.
+
+### How requirements are read
+
+Both reports read requirements from the posting body, and only a stated
+requirement drops a job:
+
+- **Years of experience.** A figure counts only when it is required. It is
+  skipped when its clause says preferred, a plus or nice to have, or when it
+  sits under a "Preferred qualifications" heading; when it describes the
+  employer ("our team brings 20 years of experience"); and when it stands in for
+  a degree ("a bachelor's degree or 4 years of equivalent experience"). Several
+  bars joined by "or" ("BS with 2+ years, or MS with 0 years") count as the
+  lowest. Written-out numbers ("five (5) years") are read too.
+- **Degrees.** A master's or PhD is required only when no lower option is
+  offered beside it, so "Bachelor's or Master's degree required", "BS/MS" and
+  "Master's degree or equivalent experience" do not drop a job. "MS" followed by
+  a Microsoft product ("MS Excel", "MS SQL Server") is not a degree.
 
 ## Personalized reporting
 

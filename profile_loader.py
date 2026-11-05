@@ -267,3 +267,33 @@ def describe_profile(profile: dict[str, Any]) -> str:
         f"target roles: {len(profile['target_roles'])} | "
         f"skills: {len(profile['skills'])}"
     )
+
+
+def authorization_warnings(profile):
+    """Flag profiles whose work_authorization contradicts their reject_* flags.
+
+    `work_authorization` is a label; the reject_* booleans are what actually
+    filter. A profile set to "us_citizen" that still rejects citizen-only
+    postings is unlikely to mean it, and the mismatch is reported rather than
+    resolved automatically so that the profile stays the single source of truth.
+    """
+    auth = profile.get("work_authorization")
+    warnings = []
+
+    if auth in ("us_citizen", "permanent_resident"):
+        if profile.get("reject_citizenship_required", True):
+            warnings.append(
+                f"work_authorization is '{auth}' but reject_citizenship_required "
+                "is true, so citizen-only postings will still be dropped.")
+        if profile.get("reject_permanent_authorization_required", True):
+            warnings.append(
+                f"work_authorization is '{auth}' but "
+                "reject_permanent_authorization_required is true, so postings "
+                "requiring permanent authorization will still be dropped.")
+    elif auth in ("opt", "stem_opt"):
+        if not profile.get("reject_citizenship_required", True):
+            warnings.append(
+                f"work_authorization is '{auth}' but reject_citizenship_required "
+                "is false, so citizen-only postings will be kept.")
+
+    return warnings

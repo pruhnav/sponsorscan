@@ -18,7 +18,8 @@ and a GitHub Actions schedule.
 | `sponsorscan.py` | CLI: `load-lca`, `fetch-jobs`, `report`, `discover`, `setup`, `doctor` |
 | `sponsor_daily_report.py` | Personalized report from a profile; writes the all-matches and new-jobs CSVs |
 | `onboarding.py` | The `setup` wizard and `doctor` checks |
-| `profile_loader.py` | Loads and validates profile JSON |
+| `profile_loader.py` | Loads and validates profile JSON, and flags settings that contradict the work authorization |
+| `skill_patterns.py` | The skill vocabulary the report scores with and the wizard checks names against |
 | `scripts/send_job_email.py` | Emails new jobs through Gmail. `--check` tests the login |
 | `scripts/update_google_sheet.py` | Copies both CSVs into a Google Sheet. `--check` tests access |
 | `workflows/sponsorscan.example.yml` | GitHub Actions template; copy into `.github/workflows/` |

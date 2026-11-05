@@ -1059,3 +1059,20 @@ def test_missing_database_points_a_citizen_at_fetch_jobs(tmp_path):
     result = check_database(tmp_path / "absent.db", {"work_authorization": "us_citizen"})
     assert result.status == "FAIL"
     assert "fetch-jobs" in result.remedy
+
+
+def test_onboarding_does_not_import_the_report():
+    # sponsor_daily_report imports sponsorscan, which imports onboarding, so
+    # onboarding reaching back into the report closes an import cycle (flagged
+    # by CodeQL). What it needs lives below both.
+    import subprocess
+    import sys
+    code = (
+        "import sys, onboarding\n"
+        "onboarding.warn_authorization({'work_authorization': 'opt'})\n"
+        "onboarding.known_skill_names()\n"
+        "onboarding.suggest_skill('Pythn')\n"
+        "print('sponsor_daily_report' in sys.modules)\n")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         cwd=str(__import__('pathlib').Path(__file__).resolve().parent.parent))
+    assert out.stdout.strip() == "False", out.stderr

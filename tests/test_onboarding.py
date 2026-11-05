@@ -477,6 +477,27 @@ def test_built_profile_passes_the_real_validator():
     assert profile["skills"] == {"Python": 7}
 
 
+@pytest.mark.parametrize("auth", ["us_citizen", "permanent_resident"])
+def test_built_profile_rules_agree_with_the_authorization(auth):
+    from sponsor_daily_report import authorization_warnings
+    profile = build_profile(
+        name="Casey", profile_id="casey", work_authorization=auth,
+        target_roles=[], skills={}, preferred_locations=[],
+        max_required_experience=1, report_hours=48)
+    assert authorization_warnings(profile) == []
+    assert profile["reject_opt_excluded"] is False
+
+
+def test_built_opt_profile_keeps_every_authorization_rule():
+    profile = build_profile(
+        name="Casey", profile_id="casey", work_authorization="opt",
+        target_roles=[], skills={}, preferred_locations=[],
+        max_required_experience=1, report_hours=48)
+    assert all(profile[flag] for flag in (
+        "reject_citizenship_required", "reject_permanent_authorization_required",
+        "reject_opt_excluded", "reject_no_future_sponsorship"))
+
+
 def test_output_filenames_derive_from_the_profile_id():
     profile = build_profile(
         name="Casey", profile_id="casey", work_authorization="opt",

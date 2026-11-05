@@ -29,6 +29,7 @@ import yaml
 
 from profile_loader import (
     DEFAULT_PROFILE,
+    NO_SPONSORSHIP_NEEDED,
     VALID_WORK_AUTHORIZATION,
     ProfileError,
     load_profile,
@@ -429,6 +430,16 @@ def build_profile(name, profile_id, work_authorization, target_roles, skills,
             "google_sheets_enabled": bool(google_sheets_enabled),
         },
     })
+    # The defaults are written for someone who needs sponsorship. Left as they
+    # are, a citizen's profile would drop citizen-only postings, and `doctor`
+    # would flag the wizard's own output as contradictory.
+    if work_authorization in NO_SPONSORSHIP_NEEDED:
+        profile.update({
+            "reject_citizenship_required": False,
+            "reject_permanent_authorization_required": False,
+            "reject_opt_excluded": False,
+            "reject_no_future_sponsorship": False,
+        })
     return profile
 
 

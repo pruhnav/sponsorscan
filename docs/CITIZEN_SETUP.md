@@ -69,7 +69,8 @@ The citizen example includes these defaults:
   "reject_clearance_roles": true,
   "reject_citizenship_required": false,
   "reject_permanent_authorization_required": false,
-  "reject_opt_excluded": false
+  "reject_opt_excluded": false,
+  "reject_no_future_sponsorship": false
 }
 ```
 
@@ -88,6 +89,7 @@ The citizen example includes these defaults:
 | `reject_citizenship_required` | Keep or reject U.S.-citizenship-required roles |
 | `reject_permanent_authorization_required` | Keep or reject permanent-work-authorization roles |
 | `reject_opt_excluded` | Relevant mainly to OPT profiles; normally false for citizens |
+| `reject_no_future_sponsorship` | Only applies to profiles that need sponsorship; a citizen's profile ignores it |
 
 The `_required` flags look for a stated requirement, such as "a PhD is
 required" or "minimum qualifications: master's degree". They are on by default

@@ -1,0 +1,53 @@
+name: Labels
+
+# pull_request_target runs this file from main with a token that can label, so
+# it also works for pull requests from forks. It never checks out or runs the
+# pull request's code, and the title is only ever read from an environment
+# variable, never pasted into the script.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  area:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: true
+
+  type:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Label by the type in the title
+        run: |
+          # "fix(report): ..." -> fix. A title without a type gets no label.
+          type=$(printf '%s' "$TITLE" | sed -nE 's/^([a-z]+)(\([^)]*\))?!?:.*/\1/p')
+          case "$type" in
+            fix) label=bug ;;
+            feat) label=enhancement ;;
+            docs) label=documentation ;;
+            ci|chore|test|refactor|build|perf|style) label=maintenance ;;
+            *) label= ;;
+          esac
+          # Exactly one type label: drop the others, then add this one.
+          for other in bug enhancement documentation maintenance; do
+            if [ "$other" != "$label" ]; then
+              gh pr edit "$PR" --remove-label "$other" >/dev/null 2>&1 || true
+            fi
+          done
+          if [ -n "$label" ]; then
+            gh pr edit "$PR" --add-label "$label"
+          else
+            echo "::warning::The title does not start with a type such as fix: or feat:, so no type label was added."
+          fi

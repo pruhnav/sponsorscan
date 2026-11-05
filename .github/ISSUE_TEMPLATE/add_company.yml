@@ -1,6 +1,6 @@
 name: Add a company
 description: Request that a company job board be added to companies.yaml
-labels: [companies]
+labels: ["area: boards"]
 body:
   - type: markdown
     attributes:

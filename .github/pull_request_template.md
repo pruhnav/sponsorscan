@@ -24,7 +24,7 @@
 ## Checklist
 
 - [ ] The title follows `type(scope): summary`, for example `fix(report): key jobs by posting ID`
-- [ ] `python -m pytest tests -q` and `python selftest.py` pass
+- [ ] `python -m pytest tests -q`, `python selftest.py` and `ruff check .` pass
 - [ ] Tests added or updated for behavior changes, with no network access
 - [ ] README or `docs/` updated if commands, flags or setup changed
 - [ ] No personal data or credentials (profiles, state files, `.env`, keys)

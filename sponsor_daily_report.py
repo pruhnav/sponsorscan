@@ -27,7 +27,8 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from profile_loader import ProfileError, load_profile, describe_profile, needs_sponsorship
-from sponsorscan import HAVE_RAPIDFUZZ, is_senior_title, match_employer, norm_employer
+from sponsorscan import (CLEARANCE_RES, HAVE_RAPIDFUZZ, ONLY_CITIZENS, is_senior_title,
+                         match_employer, norm_employer)
 
 DB_PATH = Path(os.environ.get("SPONSORSCAN_DB", "sponsorscan.db"))
 DEFAULT_STATE = Path(".sponsorscan_state.json")
@@ -291,13 +292,51 @@ _DEGREE_REQUIRED_TEMPLATE = (
     r")"
 )
 
-PHD_REQUIRED_RE = re.compile(
-    _DEGREE_REQUIRED_TEMPLATE.format(
-        degree=r"ph\.?\s*d\.?|doctorate|doctoral degree"), re.I)
+# "MS" followed by a Microsoft product is not a master's degree: "MS Excel",
+# "MS SQL Server", "MS Office".
+_MS_DEGREE = (r"m\.?\s*s\.?(?!\s*-?\s*(?:office|excel|word|sql|teams|azure|dynamics|"
+              r"access|project|windows|outlook|power\s*point|visio|sharepoint|365|"
+              r"exchange|fabric|power\s*bi|paint|dos)\b)")
 
-MASTERS_REQUIRED_RE = re.compile(
-    _DEGREE_REQUIRED_TEMPLATE.format(
-        degree=r"master'?s degree|m\.?\s*s\.?|m\.?\s*sc\.?|graduate degree"), re.I)
+# Degrees that, offered as an alternative, make a higher one optional:
+# "Bachelor's or Master's degree", "BS/MS", "Master's or equivalent experience".
+_BELOW_MASTERS = r"bachelor'?s?|undergraduate|equivalent|b\.?\s?s|b\.?\s?a|b\.?\s?sc"
+_BELOW_PHD = _BELOW_MASTERS + r"|master'?s?|m\.?\s?s|m\.?\s?sc"
+
+
+def _alternative_re(lower):
+    return re.compile(
+        rf"\b(?:{lower})\b\.?(?:\s+degree)?\s*(?:/|\bor\b)"
+        rf"|(?:/|\bor\b)\s*(?:an?\s+)?\b(?:{lower})\b", re.I)
+
+
+class _StatedDegree:
+    """A degree requirement, unless a lower degree is offered beside it.
+
+    Has the `search` of a compiled pattern, so callers treat it as one.
+    """
+
+    def __init__(self, degree, lower):
+        self._regex = re.compile(_DEGREE_REQUIRED_TEMPLATE.format(degree=degree), re.I)
+        self._alternative = _alternative_re(lower)
+
+    def search(self, text):
+        text = text or ""
+        for match in self._regex.finditer(text):
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            line_end = text.find("\n", match.end())
+            line_end = len(text) if line_end == -1 else line_end
+            window = text[max(line_start, match.start() - 60):
+                          min(line_end, match.end() + 60)]
+            if not self._alternative.search(window):
+                return match
+        return None
+
+
+PHD_REQUIRED_RE = _StatedDegree(r"ph\.?\s*d\.?|doctorate|doctoral degree", _BELOW_PHD)
+
+MASTERS_REQUIRED_RE = _StatedDegree(
+    rf"master'?s degree|{_MS_DEGREE}|m\.?\s*sc\.?|graduate degree", _BELOW_MASTERS)
 
 # Any mention at all, required or not. Much blunter than the two above: it
 # also fires on "a Master's is a plus", so it is opt-in.
@@ -305,7 +344,7 @@ PHD_MENTION_RE = re.compile(
     r"\b(?:ph\.?\s*d\.?|doctorate|doctoral(?: degree)?)\b", re.I)
 
 MASTERS_MENTION_RE = re.compile(
-    r"\b(?:master'?s(?: degree)?|m\.?\s*s\.?|m\.?\s*sc\.?|graduate degree)\b", re.I)
+    rf"\b(?:master'?s(?: degree)?|{_MS_DEGREE}|m\.?\s*sc\.?|graduate degree)\b", re.I)
 
 ACADEMIC_ROLE_RE = re.compile(
     r"\b(?:postdoctoral|post-doc|postdoc|faculty|professor)\b", re.I)
@@ -339,14 +378,95 @@ EXPERIENCE_REQUIREMENT_RE = re.compile(
 )
 
 
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15,
+}
+# "Five (5) years", "three years": written-out numbers before a duration.
+_SPELLED_YEARS = re.compile(
+    r"\b(" + "|".join(_NUMBER_WORDS) + r")\b(?:\s*\((\d{1,2})\))?"
+    r"(?=\s*\+?\s*(?:or more\s+)?(?:years?|yrs?)\b)", re.I)
+
+# A heading that opens a list of nice-to-haves, or one that returns to
+# requirements. Only short lines count, so prose is not mistaken for one.
+_PREFERRED_HEADING = re.compile(
+    r"^\W*(?:preferred|bonus|nice[- ]to[- ]haves?|desired|pluses|good to have|"
+    r"ideal(?:ly)?|extra credit)\b", re.I)
+_REQUIRED_HEADING = re.compile(
+    r"^\W*(?:required|requirements|minimum|basic|qualifications|must[- ]haves?|"
+    r"what you(?:'ll)? need|what we(?:'re)? looking for|you have|who you are|"
+    r"about you|responsibilities)\b", re.I)
+_PREFERRED_CUE = re.compile(
+    r"\b(?:preferred|a plus|nice[- ]to[- ]have|bonus|ideally|desired|desirable|"
+    r"an advantage|helpful)\b", re.I)
+# The employer describing itself: "our team brings 20 years of experience".
+_COMPANY_HISTORY = re.compile(
+    r"\b(?:we|our\s+\w+|the company|the firm)\s+(?:have|has|bring|brings|offer|"
+    r"offers|combine|combines)\s+(?:over\s+|more than\s+|nearly\s+|almost\s+)?$", re.I)
+# Experience offered in place of a degree binds only those without one.
+_DEGREE_OR_BEFORE = re.compile(
+    r"\b(?:degree|diploma|bachelor'?s?|bs|ba|b\.s\.?)\b[^\n]{0,30}?\bor\s+(?:an?\s+)?$",
+    re.I)
+_IN_LIEU_AFTER = re.compile(r"^[^.;\n]{0,30}\b(?:in lieu of|instead of)\b", re.I)
+_DEGREE_WORD = re.compile(
+    r"\b(?:bs|ba|ms|ma|phd|bachelor'?s?|master'?s?|degree|b\.s|m\.s)\b", re.I)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+
+def _is_requirement(sentence, match):
+    """False for a figure that is preferred, describes the employer, or
+    stands in for a degree."""
+    clause_start = max(sentence.rfind(",", 0, match.start()),
+                       sentence.rfind(";", 0, match.start())) + 1
+    ends = [i for i in (sentence.find(",", match.end()), sentence.find(";", match.end()))
+            if i != -1]
+    clause = sentence[clause_start:min(ends) if ends else len(sentence)]
+    if _PREFERRED_CUE.search(clause):
+        return False
+    before = sentence[max(0, match.start() - 40):match.start()]
+    after = sentence[match.end():match.end() + 40]
+    if _COMPANY_HISTORY.search(before):
+        return False
+    return not ("equivalent" in match.group(0).lower()
+                or _DEGREE_OR_BEFORE.search(before) or _IN_LIEU_AFTER.search(after))
+
+
 def iter_experience_requirements(text):
-    """Yield (minimum, maximum) year pairs stated as experience requirements."""
-    for match in EXPERIENCE_REQUIREMENT_RE.finditer(text or ""):
-        minimum = match.group("min") or match.group("min2")
-        maximum = match.group("max") or match.group("max2")
-        if minimum is None:
+    """Yield (minimum, maximum) year pairs stated as experience requirements.
+
+    Figures that are not requirements are skipped: preferred ones (by a cue in
+    their clause, or a "Preferred qualifications" heading above them), the
+    employer's own history, and experience offered in place of a degree.
+    Alternatives in one sentence, "BS with 2+ years, or MS with 0 years", count
+    as their lowest bar, the most lenient honest reading.
+    """
+    text = _SPELLED_YEARS.sub(
+        lambda m: m.group(2) or str(_NUMBER_WORDS[m.group(1).lower()]), text or "")
+    preferred_section = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if len(stripped) <= 60:
+            if _PREFERRED_HEADING.match(stripped):
+                preferred_section = True
+            elif _REQUIRED_HEADING.match(stripped):
+                preferred_section = False
+        if preferred_section:
             continue
-        yield int(minimum), int(maximum) if maximum else None
+        for sentence in _SENTENCE_END.split(line):
+            kept = []
+            for match in EXPERIENCE_REQUIREMENT_RE.finditer(sentence):
+                minimum = match.group("min") or match.group("min2")
+                maximum = match.group("max") or match.group("max2")
+                if minimum is not None and _is_requirement(sentence, match):
+                    kept.append((match, int(minimum), int(maximum) if maximum else None))
+            alternatives = len(kept) > 1 and _DEGREE_WORD.search(sentence) and all(
+                re.search(r"\bor\b", sentence[a[0].end():b[0].start()], re.I)
+                for a, b in zip(kept, kept[1:]))
+            if alternatives:
+                kept = [min(kept, key=lambda k: k[1])]
+            for _, minimum, maximum in kept:
+                yield minimum, maximum
 
 
 # ------------------------------------------------------------ sponsorship
@@ -388,9 +508,8 @@ DISQUALIFIERS = [
     r"\bmust be (?:a |an )?(?:u\.?\s?s\.?|united states)\s?(?:citizen|person|national)\b",
     r"\b(?:u\.?\s?s\.?|united states)\s?citizenship (?:is )?required\b",
     r"\b(?:u\.?\s?s\.?|united states)\s?(?:citizens?|persons?)\s+only\b",
-    r"\bsecurity clearance\b",
-    r"\bitar\b",
-    r"\bexport control(?:led|s)?\b",
+    ONLY_CITIZENS,
+    # Clearance and export control: CLEARANCE_RES, added to DISQ_RE below.
 ]
 
 SPONSOR_POSITIVE = [
@@ -400,7 +519,7 @@ SPONSOR_POSITIVE = [
     r"\bsponsorship (?:is )?(?:available|offered|provided)\b",
 ]
 
-DISQ_RE = [re.compile(p, re.I) for p in DISQUALIFIERS]
+DISQ_RE = [re.compile(p, re.I) for p in DISQUALIFIERS] + CLEARANCE_RES
 SPONSOR_POS_RE = [re.compile(p, re.I) for p in SPONSOR_POSITIVE]
 
 # Each authorization check, keyed by the profile flag that enables it.
@@ -430,12 +549,9 @@ AUTHORIZATION_CHECKS = {
                    r"citizenship (?:is )?required\b", re.I),
         re.compile(r"\b(?:u\.?\s?s\.?|united states)\s?"
                    r"(?:citizens?|persons?)\s+only\b", re.I),
+        re.compile(ONLY_CITIZENS, re.I),
     ],
-    "reject_clearance_roles": [
-        re.compile(r"\bsecurity clearance\b", re.I),
-        re.compile(r"\bitar\b", re.I),
-        re.compile(r"\bexport control(?:led|s)?\b", re.I),
-    ],
+    "reject_clearance_roles": CLEARANCE_RES,
 }
 
 

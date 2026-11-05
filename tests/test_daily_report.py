@@ -8,6 +8,7 @@ leaves no trace in the output.
 import pytest
 
 import sponsor_daily_report as sdr
+import sponsorscan as ss
 
 
 # ------------------------------------------------- experience requirements
@@ -447,6 +448,73 @@ def test_opt_candidate_still_scores_filing_history():
     heavy, _ = sdr.sponsorship_score(HEAVY_FILER, "Software Engineer", "", profile=opt)
     none, _ = sdr.sponsorship_score(None, "Software Engineer", "", profile=opt)
     assert heavy > none == 0
+
+
+# ------------------------------------------------- false drops (career level)
+#
+# Each "keep" case was dropped by the filters before; each "drop" case is a
+# real requirement that must keep dropping.
+
+@pytest.mark.parametrize("description", [
+    "3+ years of experience with SQL preferred.",
+    "Preferred qualifications:\n3+ years of experience building APIs.",
+    "Bachelor's degree or 4 years of equivalent experience.",
+    "Our team brings 20 years of experience serving clients.",
+    "We have 15+ years of experience in fintech.",
+    "BS with 2+ years of experience, or MS with 0 years of experience.",
+    "Required skills: proficiency with MS Excel and MS SQL Server.",
+    "Must have strong communication skills and familiarity with MS Office.",
+    "Required: Bachelor's or Master's degree in Computer Science.",
+    "Master's degree or equivalent practical experience required.",
+])
+def test_not_a_requirement_is_kept(description):
+    bonus, reason, _, _ = sdr.career_level_score("Software Engineer", description, {})
+    assert bonus is not None, reason
+
+
+@pytest.mark.parametrize("description, reason", [
+    ("Five (5) years of professional experience required.", "5+ years required"),
+    ("Three years of experience required.", "3+ years required"),
+    ("5+ years of experience required; 7+ years preferred.", "5+ years required"),
+    ("You have 3+ years of experience with distributed systems.", "3+ years required"),
+    ("We are looking for someone with 3+ years of experience.", "3+ years required"),
+    ("Master's degree in Computer Science required.", "Master's required in description"),
+    ("PhD or Master's degree required.", "Master's required in description"),
+    ("Minimum qualifications: PhD in machine learning.", "PhD required in description"),
+])
+def test_real_requirement_still_drops(description, reason):
+    assert sdr.career_level_score("Software Engineer", description, {})[1] == reason
+
+
+# ------------------------------------------ false drops (work authorization)
+
+OPT_RULES = {"work_authorization": "opt"}
+
+
+@pytest.mark.parametrize("blob", [
+    "This position does not require a security clearance.",
+    "No security clearance is needed for this role.",
+    "A security clearance is not required.",
+    "This role may be subject to U.S. export control laws; we sponsor visas.",
+    "Our products are subject to export controls.",
+])
+def test_negated_or_boilerplate_restriction_is_kept(blob):
+    assert not sdr.violates_work_authorization(blob, OPT_RULES)
+    assert not sdr.violates_work_authorization(blob, None)
+    assert not any(p.search(blob) for p in ss.DISQ_RE)
+
+
+@pytest.mark.parametrize("blob", [
+    "Must be able to obtain and maintain a security clearance.",
+    "An active security clearance is required.",
+    "This role requires access to export-controlled technology.",
+    "This program is ITAR-regulated.",
+    "Only U.S. citizens are eligible for this role.",
+])
+def test_real_restriction_still_drops(blob):
+    assert sdr.violates_work_authorization(blob, OPT_RULES)
+    assert sdr.violates_work_authorization(blob, None)
+    assert any(p.search(blob) for p in ss.DISQ_RE)
 
 
 def test_withdrawn_or_denied_filings_do_not_lower_the_score():

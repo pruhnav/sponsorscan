@@ -23,12 +23,16 @@ source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 ```
 
-Run the tests before opening a PR:
+Run the tests and the linter before opening a PR:
 
 ```bash
 python -m pytest
 python selftest.py
+ruff check .
 ```
+
+`ruff check --fix .` fixes most findings by itself. CI also runs CodeQL,
+GitHub's security scanner; its findings show under Security > Code scanning.
 
 ## Pull requests
 
@@ -47,6 +51,15 @@ PRs are squash-merged, so the PR title becomes the one commit on `main` and the
 PR body becomes its message. Commits inside the branch can be as small and
 messy as you like. The Tests workflow runs both suites on Linux, macOS and
 Windows for every PR and must pass before merging.
+
+Labels are applied for you, so there is no need to set them by hand:
+
+- **One type label from the title:** `fix` gives `bug`, `feat` gives
+  `enhancement`, `docs` gives `documentation`, and `ci`, `chore`, `test` or
+  `refactor` give `maintenance`. Editing the title updates it.
+- **Area labels from the files changed:** `area: report`, `area: scanner`,
+  `area: boards`, `area: setup`, `area: alerts`, `area: docs` and `area: ci`.
+  `.github/labeler.yml` maps files to areas.
 
 ## Never commit personal data
 

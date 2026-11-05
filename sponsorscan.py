@@ -276,7 +276,7 @@ def cmd_load_lca(args):
         if n % 100_000 == 0:
             print(f"  ...{n:,} rows")
 
-        def get(key):
+        def get(key, row=row):  # bound now: the row is read on this pass only
             i = idx.get(key)
             return row[i] if i is not None and i < len(row) else None
 
@@ -874,7 +874,7 @@ def cmd_discover(args):
     print(f"{len(tasks):,} probes to run "
           f"({len(cache):,} already cached). Ctrl-C is safe, results are saved as they land.")
 
-    found, done, transient = {}, 0, 0
+    done, transient = 0, 0
     if tasks:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -970,6 +970,54 @@ def cmd_discover(args):
 
 # ---------------------------------------------------------------------- report
 
+# "Only U.S. citizens are eligible", the word order the other citizenship
+# patterns miss.
+ONLY_CITIZENS = r"\bonly\s+(?:u\.?\s?s\.?|united states)\s?(?:citizens?|persons?)\b"
+
+# A restriction stated in the negative is not a restriction: "this position
+# does not require a security clearance", "a clearance is not required".
+_NEGATED_BEFORE = re.compile(
+    r"(?:\b(?:no|not|non|without|never)\b|n't\b)[^.;\n]{0,40}$", re.I)
+_NEGATED_AFTER = re.compile(
+    r"^[^.;\n]{0,25}?\b(?:not|never)\s+(?:be\s+)?(?:required|needed|necessary)\b"
+    r"|^[^.;\n]{0,25}?\bis\s+optional\b", re.I)
+
+
+class Unnegated:
+    """A pattern whose matches stated in the negative are skipped.
+
+    It has the `search` and `pattern` of a compiled pattern, so it sits in the
+    same lists and callers need not know the difference.
+    """
+
+    def __init__(self, pattern):
+        self.pattern = pattern
+        self._regex = re.compile(pattern, re.I)
+
+    def search(self, text):
+        text = text or ""
+        for match in self._regex.finditer(text):
+            before = text[max(0, match.start() - 60):match.start()]
+            after = text[match.end():match.end() + 40]
+            if not (_NEGATED_BEFORE.search(before) or _NEGATED_AFTER.search(after)):
+                return match
+        return None
+
+
+# Clearance and export-control restrictions, shared by every report.
+#
+# A bare mention of export controls is not one: "this role may be subject to
+# U.S. export control laws" is boilerplate at many employers that sponsor,
+# often through an export license. Only a requirement to work with
+# export-controlled material counts here; "must be a U.S. person" is caught by
+# the citizenship patterns.
+CLEARANCE_RES = [
+    Unnegated(r"\bsecurity clearance\b"),
+    Unnegated(r"\bitar\b"),
+    re.compile(r"\b(?:require|requires|required|must)\b[^.;\n]{0,60}"
+               r"\bexport[- ]controlled\b", re.I),
+]
+
 # Phrases that mean you are excluded regardless of anything else. Checked against
 # the posting body. This is the filter that actually matters while on OPT.
 DISQUALIFIERS = [
@@ -983,9 +1031,8 @@ DISQUALIFIERS = [
     r"\b(?:not|no|non|unable|without|cannot|can't|won't|unwilling)\b[^.;\n]{0,60}?sponsor",
     r"\bmust be (?:a |an )?(?:u\.?\s?s\.?|united states)\s?(?:citizen|person|national)\b",
     r"\b(?:u\.?\s?s\.?|united states)\s?citizenship (?:is )?required\b",
-    r"\bsecurity clearance\b",
-    r"\bitar\b",
-    r"\bexport control(?:led|s)?\b",
+    r"\b(?:u\.?\s?s\.?|united states)\s?(?:citizens?|persons?)\s+only\b",
+    ONLY_CITIZENS,
 ]
 
 SPONSOR_POSITIVE = [
@@ -1016,7 +1063,7 @@ def is_senior_title(title):
     return bool(SENIOR_TITLE.search(title)) and not EARLY_CAREER_TITLE.search(title)
 
 
-DISQ_RE = [re.compile(p, re.I) for p in DISQUALIFIERS]
+DISQ_RE = [re.compile(p, re.I) for p in DISQUALIFIERS] + CLEARANCE_RES
 POS_RE = [re.compile(p, re.I) for p in SPONSOR_POSITIVE]
 
 
@@ -1118,7 +1165,7 @@ def cmd_report(args):
             score += 20
             why.append("entry level")
 
-        if locs and any(l in (location or "").lower() for l in locs):
+        if locs and any(loc in (location or "").lower() for loc in locs):
             score += 15
             why.append("location match")
         elif locs and not args.any_location:

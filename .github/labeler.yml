@@ -1,0 +1,46 @@
+# Area labels, applied by .github/workflows/labels.yml from the files a pull
+# request changes. A PR can carry several. The type label (bug, enhancement,
+# documentation, maintenance) comes from the PR title instead.
+
+"area: report":
+  - changed-files:
+      - any-glob-to-any-file: sponsor_daily_report.py
+
+"area: scanner":
+  - changed-files:
+      - any-glob-to-any-file: sponsorscan.py
+
+"area: boards":
+  - changed-files:
+      - any-glob-to-any-file: companies.yaml
+
+"area: setup":
+  - changed-files:
+      - any-glob-to-any-file:
+          - onboarding.py
+          - profile_loader.py
+          - profiles/**
+          - docs/OPT_SETUP.md
+          - docs/CITIZEN_SETUP.md
+
+"area: alerts":
+  - changed-files:
+      - any-glob-to-any-file:
+          - scripts/send_job_email.py
+          - scripts/update_google_sheet.py
+          - docs/EMAIL_SETUP.md
+          - docs/GOOGLE_SHEETS_SETUP.md
+
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - docs/**
+          - AGENTS.md
+          - CONTRIBUTING.md
+
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - workflows/**

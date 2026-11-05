@@ -74,17 +74,21 @@ jobs:
       - name: Load LCA data
         id: load-lca
         if: steps.profile.outputs.lca == 'true' && steps.db-cache.outputs.cache-hit != 'true'
-        # --latest resolves the newest disclosure file from the DOL site. The
-        # DOL site blocks some networks, GitHub's runners included, so when it
-        # fails the step falls back to LCA_FILE_URL (a repository variable
-        # pointing at a copy you downloaded in a browser), then to the cached
-        # database from an earlier month. It fails only with no data at all.
-        # Nothing is deleted before a download succeeds, so a failed refresh
-        # leaves the cached copy intact.
+        # --prebuilt loads the employer table SponsorScan publishes each quarter
+        # as a GitHub release, which the runner can always reach. If that fails,
+        # --latest tries the DOL site, which usually blocks GitHub's runners;
+        # then LCA_FILE_URL (a repository variable pointing at a copy you
+        # downloaded in a browser); then the cached database from an earlier
+        # month. It fails only with no data at all. Nothing is deleted before a
+        # download succeeds, so a failed refresh leaves the cached copy intact.
         env:
           LCA_FILE_URL: ${{ vars.LCA_FILE_URL }}
           CACHED_KEY: ${{ steps.db-cache.outputs.cache-matched-key }}
         run: |
+          if python sponsorscan.py load-lca --prebuilt --replace; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if python sponsorscan.py load-lca --latest --replace; then
             echo "fresh=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -97,7 +101,7 @@ jobs:
             echo "::warning::Could not refresh the LCA data. Using the cached copy ($CACHED_KEY)."
             exit 0
           fi
-          echo "::error::No LCA data. The DOL site could not be reached and no cached copy exists. Set the LCA_FILE_URL repository variable; see docs/REFERENCE.md."
+          echo "::error::No LCA data. Neither the prebuilt table nor the DOL site could be reached, and no cached copy exists. Set the LCA_FILE_URL repository variable; see docs/REFERENCE.md."
           exit 1
 
       - name: Save SponsorScan database cache

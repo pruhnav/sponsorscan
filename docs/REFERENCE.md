@@ -69,6 +69,36 @@ After the two commands above, the database covers FY2025 Q4 and FY2026 Q1-Q3,
 which `load-lca` prints when it finishes. For all of FY2025, load its Q1, Q2
 and Q3 files too.
 
+### The prebuilt table
+
+The quarters loaded from DOL's files come to a table of a few MB. SponsorScan
+publishes that table each quarter as the `lca-latest` release of this
+repository, so anyone can load it in seconds:
+
+```powershell
+python sponsorscan.py load-lca --prebuilt --replace
+```
+
+It is the same public DOL data, loaded by the same code. Its `lca.json` names
+the quarters it covers and the SHA-256 of the data file, and `load-lca` refuses a
+download whose checksum does not match, leaving the database as it was. A
+prebuilt table combines with DOL files like any other: load it, then load a newer
+DOL file without `--replace` to add the quarters it has. `--prebuilt <path or URL
+to an lca.json>` reads a table published somewhere else.
+
+To refresh the published table when DOL releases a quarter, load the DOL files
+it should cover, export, and upload both files over the old ones:
+
+```powershell
+python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2025_Q4.xlsx" --replace
+python sponsorscan.py load-lca "$HOME\Downloads\LCA_Disclosure_Data_FY2026_Q3.xlsx"
+python sponsorscan.py export-lca lca.ndjson.gz
+gh release upload lca-latest lca.ndjson.gz lca.json --clobber
+```
+
+`export-lca` always writes the same bytes for the same data, so the checksum
+changes only when the data does.
+
 ### Resolving the file automatically
 
 ```powershell
@@ -530,6 +560,10 @@ the tabs. Only the repository's owner sees it.
 Never place secret values directly in the workflow YAML.
 
 ### When the DOL site blocks the runner
+
+The workflow loads the prebuilt table first (see
+[The prebuilt table](#the-prebuilt-table)), which the runner can always reach,
+so most users never need what follows.
 
 The DOL site sits behind bot protection that rejects GitHub's runners, so
 `load-lca --latest` usually fails there. The workflow handles that. It caches

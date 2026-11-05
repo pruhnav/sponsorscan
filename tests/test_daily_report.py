@@ -447,3 +447,14 @@ def test_opt_candidate_still_scores_filing_history():
     heavy, _ = sdr.sponsorship_score(HEAVY_FILER, "Software Engineer", "", profile=opt)
     none, _ = sdr.sponsorship_score(None, "Software Engineer", "", profile=opt)
     assert heavy > none == 0
+
+
+def test_withdrawn_or_denied_filings_do_not_lower_the_score():
+    # A withdrawal is usually the candidate taking another offer or the role
+    # closing, and "certified - withdrawn" is routine at large sponsors. Neither
+    # says the employer will not sponsor.
+    opt = {"work_authorization": "opt"}
+    clean = sdr.sponsorship_score(HEAVY_FILER, "Software Engineer", "", profile=opt)
+    churn = sdr.sponsorship_score(dict(HEAVY_FILER, trouble_rate=0.6),
+                                  "Software Engineer", "", profile=opt)
+    assert churn == clean

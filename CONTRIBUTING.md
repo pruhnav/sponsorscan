@@ -32,11 +32,21 @@ python selftest.py
 
 ## Pull requests
 
-- Keep each PR focused on one change.
-- Add or update tests in `tests/` for behavior changes.
+- Keep each PR focused on one change. Two fixes are two PRs.
+- Title it `type(scope): summary`, in the imperative. The type is one of
+  `fix`, `feat`, `docs`, `test`, `refactor`, `ci` or `chore`; the scope is the
+  area it touches, such as `report`, `fetch`, `load-lca`, `setup` or `boards`.
+  For example `fix(fetch): handle empty Lever boards` or
+  `feat(fetch): add Workable support`. Keep `feat` for something a user notices.
+- Fill in every section of the PR template, including how you tested it.
+- Add or update tests in `tests/` for behavior changes. Tests must not touch the
+  network.
 - Update the README or `docs/` when you change commands, flags, or setup steps.
-- Use short, imperative commit messages with a type prefix, for example
-  `fix: handle empty Lever boards` or `feat: add Workable support`.
+
+PRs are squash-merged, so the PR title becomes the one commit on `main` and the
+PR body becomes its message. Commits inside the branch can be as small and
+messy as you like. The Tests workflow runs both suites on Linux, macOS and
+Windows for every PR and must pass before merging.
 
 ## Never commit personal data
 

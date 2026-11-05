@@ -601,6 +601,14 @@ def normalize_url(url):
 
 
 def stable_job_key(company, title, location, url):
+    """The key jobs were tracked by before posting IDs: their URL.
+
+    Only used to read a state file written under that scheme, and for a job
+    with no stored ID. A URL is a poor identity: Stripe, Databricks, Nuro and
+    Instacart link every posting to one careers page and tell them apart only
+    by a ?gh_jid= query string, which this drops, so each of those boards
+    collapsed into a single key.
+    """
     normalized_url = normalize_url(url)
     if normalized_url:
         return normalized_url
@@ -793,28 +801,34 @@ def priority_label(score, resume_fit):
 SEEN_RETENTION_DAYS = 60
 
 
+STATE_VERSION = 3  # 3: jobs keyed by board and posting ID instead of URL
+
+
 def load_previous_state(path):
-    """Return (seen, companies).
+    """Return (seen, companies, url_keyed).
 
     seen maps job key to the ISO date it was last matched. companies is the set
     of employers already tracked, or None when there is nothing to baseline
     against: no state yet, or a state written before companies were recorded.
+    url_keyed is True when the state predates posting-ID keys, so its keys are
+    URLs (see stable_job_key).
     """
     if not path.exists():
-        return {}, None
+        return {}, None, False
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {}, None
+        return {}, None, False
+    url_keyed = data.get("version", 1) < STATE_VERSION
     if "seen" in data:
-        return dict(data["seen"]), set(data.get("companies", []))
+        return dict(data["seen"]), set(data.get("companies", [])), url_keyed
     today = datetime.now(timezone.utc).date().isoformat()
-    return {key: today for key in data.get("active_job_keys", [])}, None
+    return {key: today for key in data.get("active_job_keys", [])}, None, url_keyed
 
 
 def save_state(path, seen, companies):
     payload = {
-        "version": 2,
+        "version": STATE_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "seen": dict(sorted(seen.items())),
         "companies": sorted(companies),
@@ -960,7 +974,7 @@ def main():
     preferred_locations = (profile or {}).get("preferred_locations") or []
 
     state_path = Path(args.state)
-    seen, tracked_companies = ({}, None) if args.reset_state \
+    seen, tracked_companies, url_keyed = ({}, None, False) if args.reset_state \
         else load_previous_state(state_path)
 
     now_utc = datetime.now(timezone.utc)
@@ -976,7 +990,7 @@ def main():
                 r[1] for r in con.execute("PRAGMA table_info(jobs)")}
             jobs = con.execute(
                 "SELECT company, company_norm, title, location, url, posted, "
-                "description, source, "
+                "description, source, job_key, "
                 + ("lca_name" if has_lca_name else "NULL") + " FROM jobs"
             ).fetchall()
         except sqlite3.OperationalError as exc:
@@ -1009,9 +1023,18 @@ def main():
     }
     baselined = {}  # company_norm -> matches recorded without alerting
 
+    # Reading a state written under URL keys: a URL that stood for exactly one
+    # job this run still identifies it, so that job is not reported again. A
+    # URL shared by several jobs proves nothing about any of them.
+    url_key_uses = {}
+    if url_keyed:
+        for company, _, title, location, url, *_ in jobs:
+            legacy = stable_job_key(company, title, location, url)
+            url_key_uses[legacy] = url_key_uses.get(legacy, 0) + 1
+
     matches = {}  # name matched on -> (key, confidence); one lookup per company
     for (company, company_norm, title, location, url, posted, description, source,
-         lca_name) in jobs:
+         job_key, lca_name) in jobs:
         parsed_posted = parse_posted_datetime(posted)
         if parsed_posted is None:
             if not args.include_unknown_posted:
@@ -1083,13 +1106,17 @@ def main():
             counts["score"] += 1
             continue
 
-        key = stable_job_key(company, title, location, url)
+        # fetch-jobs keys each job by board and posting ID ("greenhouse:stripe:123").
+        key = job_key or stable_job_key(company, title, location, url)
+        legacy = stable_job_key(company, title, location, url) if url_keyed else None
+        seen_under_url = (legacy is not None and url_key_uses.get(legacy) == 1
+                          and legacy in seen)
 
         # An employer seen for the first time has its whole board looking new,
         # usually months-old postings. Record those quietly; alerts start from
         # its next genuine opening. A feed only lists recent postings and names
         # new employers all the time, so its rows are never baselined.
-        if key in seen:
+        if key in seen or seen_under_url:
             is_new = False
         elif (source not in FEED_SOURCES and tracked_companies is not None
               and company_norm not in tracked_companies):

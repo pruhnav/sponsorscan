@@ -143,14 +143,15 @@ def test_reset_state_makes_everything_new_again(workspace):
 # fetch, and comes back on the next good run; that must not read as new.
 
 def add_job(workspace, job_id, company, title="Software Engineer, New Grad",
-            location="San Francisco, CA", description="Python.", source="test"):
+            location="San Francisco, CA", description="Python.", source="test",
+            url=None):
     from sponsorscan import norm_employer
     posted = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     con = sqlite3.connect(workspace / "sponsorscan.db")
     con.execute(
         "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)",
         (f"test:{job_id}", source, company, norm_employer(company), title, location,
-         f"https://example.com/jobs/{job_id}", posted, description, "2026-09-15"))
+         url or f"https://example.com/jobs/{job_id}", posted, description, "2026-09-15"))
     con.commit()
     con.close()
 
@@ -237,6 +238,56 @@ def test_old_state_format_is_upgraded_without_silencing(workspace):
     add_job(workspace, 100, "Stripe")
     run_report(workspace)
     assert new_titles(workspace) == {("Stripe", "Software Engineer, New Grad")}
+
+
+def test_jobs_sharing_a_careers_page_url_are_tracked_separately(workspace):
+    # Stripe, Databricks, Nuro and Instacart link every Greenhouse posting to
+    # one careers page and tell them apart only by ?gh_jid=. Keying jobs by URL
+    # collapsed each of those boards into a single job, so after the first run
+    # none of their new postings was ever reported.
+    run_report(workspace)
+    add_job(workspace, 100, "Stripe", url="https://stripe.com/jobs/search?gh_jid=100")
+    run_report(workspace)  # first sighting of Stripe: a silent baseline
+    add_job(workspace, 101, "Stripe", title="Data Engineer, New Grad",
+            url="https://stripe.com/jobs/search?gh_jid=101")
+    run_report(workspace)
+    assert new_titles(workspace) == {("Stripe", "Data Engineer, New Grad")}
+
+
+def url_keyed_state(workspace, urls, companies):
+    """A state file as written before jobs were keyed by posting ID."""
+    import sponsor_daily_report as sdr
+    today = datetime.now(timezone.utc).date().isoformat()
+    (workspace / "state.json").write_text(json.dumps({
+        "version": 2,
+        "seen": {sdr.normalize_url(url): today for url in urls},
+        "companies": companies,
+    }), encoding="utf-8")
+
+
+def test_url_keyed_state_carries_over_without_resending(workspace):
+    from sponsorscan import norm_employer
+    url_keyed_state(workspace,
+                    [f"https://example.com/jobs/{i}" for i in range(len(JOBS))],
+                    sorted({norm_employer(company) for company, *_ in JOBS}))
+    run_report(workspace)
+    assert new_titles(workspace) == set()
+
+
+def test_url_shared_by_several_jobs_in_old_state_proves_nothing(workspace):
+    # Under the old keys, one collapsed URL stood for every job on the board,
+    # so it cannot say which of them was already reported.
+    from sponsorscan import norm_employer
+    shared = "https://stripe.com/jobs/search?gh_jid=1"
+    add_job(workspace, 100, "Stripe", url="https://stripe.com/jobs/search?gh_jid=100")
+    add_job(workspace, 101, "Stripe", title="Data Engineer, New Grad",
+            url="https://stripe.com/jobs/search?gh_jid=101")
+    url_keyed_state(workspace,
+                    [f"https://example.com/jobs/{i}" for i in range(len(JOBS))] + [shared],
+                    sorted({norm_employer(c) for c, *_ in JOBS} | {"stripe"}))
+    run_report(workspace)
+    assert new_titles(workspace) == {("Stripe", "Software Engineer, New Grad"),
+                                     ("Stripe", "Data Engineer, New Grad")}
 
 
 def test_long_unseen_keys_are_forgotten(workspace):

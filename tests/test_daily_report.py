@@ -196,6 +196,29 @@ def test_now_or_in_the_future_is_disqualifying():
     assert sdr.violates_work_authorization(blob, None)
 
 
+@pytest.mark.parametrize("blob", [
+    "We are unable to sponsor now or in the future.",
+    "We will not sponsor employment visas now or in the future.",
+    "Candidates requiring sponsorship now or in the future will not be considered.",
+])
+def test_refusing_future_sponsorship_blocks_an_opt_profile(blob):
+    # OPT ends; a posting that will never sponsor is a dead end, and its
+    # "now or in the future" question gets an automatic no.
+    assert sdr.violates_work_authorization(blob, {"work_authorization": "opt"})
+
+
+def test_future_sponsorship_refusal_can_be_kept_by_choice():
+    blob = "We are unable to sponsor now or in the future."
+    assert not sdr.violates_work_authorization(
+        blob, {"work_authorization": "opt", "reject_no_future_sponsorship": False})
+
+
+def test_future_sponsorship_refusal_never_blocks_a_citizen():
+    blob = "We are unable to sponsor now or in the future."
+    assert not sdr.violates_work_authorization(
+        blob, {"work_authorization": "us_citizen", "reject_no_future_sponsorship": True})
+
+
 def test_authorization_warnings_flag_contradictions():
     warnings = sdr.authorization_warnings({
         "work_authorization": "us_citizen",
@@ -424,3 +447,14 @@ def test_opt_candidate_still_scores_filing_history():
     heavy, _ = sdr.sponsorship_score(HEAVY_FILER, "Software Engineer", "", profile=opt)
     none, _ = sdr.sponsorship_score(None, "Software Engineer", "", profile=opt)
     assert heavy > none == 0
+
+
+def test_withdrawn_or_denied_filings_do_not_lower_the_score():
+    # A withdrawal is usually the candidate taking another offer or the role
+    # closing, and "certified - withdrawn" is routine at large sponsors. Neither
+    # says the employer will not sponsor.
+    opt = {"work_authorization": "opt"}
+    clean = sdr.sponsorship_score(HEAVY_FILER, "Software Engineer", "", profile=opt)
+    churn = sdr.sponsorship_score(dict(HEAVY_FILER, trouble_rate=0.6),
+                                  "Software Engineer", "", profile=opt)
+    assert churn == clean

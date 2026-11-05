@@ -13,6 +13,7 @@
   "reject_citizenship_required": true,
   "reject_permanent_authorization_required": true,
   "reject_opt_excluded": true,
+  "reject_no_future_sponsorship": true,
   "target_roles": [
     "Software Engineer",
     "Backend Engineer",

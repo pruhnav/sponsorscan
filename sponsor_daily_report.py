@@ -406,6 +406,11 @@ SPONSOR_POS_RE = [re.compile(p, re.I) for p in SPONSOR_POSITIVE]
 
 # Each authorization check, keyed by the profile flag that enables it.
 AUTHORIZATION_CHECKS = {
+    # Refuses sponsorship now or later: the first four DISQUALIFIERS. A plain
+    # "we do not sponsor" stays allowed, because OPT is already authorization;
+    # this wording also rules out the H-1B that has to follow it, and the
+    # application's "now or in the future" question gets an automatic no.
+    "reject_no_future_sponsorship": DISQ_RE[:4],
     "reject_opt_excluded": [
         re.compile(r"\b(?:opt|stem opt|cpt)\b[^.\n]{0,100}"
                    r"\b(?:not accepted|not eligible|not supported|"
@@ -444,6 +449,9 @@ def violates_work_authorization(blob, profile):
         pattern.search(blob)
         for flag, patterns in AUTHORIZATION_CHECKS.items()
         if profile.get(flag, True)
+        # A refusal to sponsor cannot disqualify someone who never needs it,
+        # whatever an older citizen profile's defaults say.
+        and (flag != "reject_no_future_sponsorship" or needs_sponsorship(profile))
         for pattern in patterns
     )
 
@@ -719,7 +727,6 @@ def load_employers(con):
     for row in rows:
         levels = [row[7] or 0, row[8] or 0, row[9] or 0, row[10] or 0]
         level_total = sum(levels)
-        case_total = (row[2] or 0) + (row[3] or 0) + (row[4] or 0)
         try:
             titles = json.loads(row[5] or "[]")
         except json.JSONDecodeError:
@@ -730,7 +737,6 @@ def load_employers(con):
             "certified": row[2] or 0,
             "titles": [str(x).lower() for x in titles],
             "senior_share": ((levels[2] + levels[3]) / level_total) if level_total else None,
-            "trouble_rate": (((row[3] or 0) + (row[4] or 0)) / case_total) if case_total else None,
         }
     return output
 
@@ -771,9 +777,11 @@ def sponsorship_score(emp, title, blob, fuzzy_confidence=100, profile=None):
             score += 10
             signals.append("historical LCA title overlap")
 
-        if emp["trouble_rate"] is not None and emp["trouble_rate"] >= 0.25:
-            score -= 8
-            signals.append("higher denied/withdrawn share")
+        # Denied and withdrawn filings do not count against an employer. A
+        # withdrawal is usually the candidate taking another offer or the role
+        # closing, and large sponsors withdraw certified LCAs routinely; a
+        # denial is the government's decision. Neither says the employer will
+        # not sponsor, which is the only question this score answers.
 
     if any(p.search(blob) for p in SPONSOR_POS_RE):
         score += 12

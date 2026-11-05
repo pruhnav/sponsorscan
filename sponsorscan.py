@@ -28,6 +28,8 @@ Run `python sponsorscan.py <command> --help` for per-command options.
 
 import argparse
 import csv
+import gzip
+import hashlib
 import html
 import json
 import os
@@ -37,6 +39,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 
 import requests
 import yaml
@@ -230,7 +233,9 @@ def _fiscal_quarter(value):
 
 
 def _top(counts, n):
-    return dict(sorted(counts.items(), key=lambda kv: -kv[1])[:n])
+    """The n most frequent entries; ties break alphabetically, so the result
+    does not depend on the order the counts were gathered in."""
+    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n])
 
 
 def _rebuild_employers(con):
@@ -333,14 +338,25 @@ def _resolve_latest_lca():
 
 
 def cmd_load_lca(args):
+    prebuilt = getattr(args, "prebuilt", None)
     if args.latest and args.path:
         raise SystemExit(
             "argument --latest: not allowed with an explicit path. "
             "Pass one or the other.")
+    if prebuilt and (args.latest or args.path):
+        raise SystemExit("argument --prebuilt: not allowed with --latest or a path. "
+                         "Pass one of them.")
+    if prebuilt:
+        quarters, meta = _read_prebuilt(prebuilt)
+        print(f"Prebuilt table built {meta.get('built', '?')}, "
+              f"covering {meta.get('quarters', '?')}.")
+        _store_quarters(quarters, f"prebuilt {meta.get('built', '')}".strip(), args.replace)
+        return
     if not args.latest and not args.path:
         raise SystemExit(
-            "Provide a path to a disclosure file, or pass --latest to resolve "
-            "the newest one from the DOL site.")
+            "Provide a path to a disclosure file, pass --latest to resolve the newest "
+            "one from the DOL site, or pass --prebuilt for the table SponsorScan "
+            "publishes.")
 
     src = _resolve_latest_lca() if args.latest else args.path
     if src.startswith(("http://", "https://")):
@@ -432,44 +448,137 @@ def cmd_load_lca(args):
     print(f"Read {n:,} rows, {len({k for e in agg.values() for k in e}):,} "
           f"distinct employers.")
 
-    # Nothing in the database changes until the whole file has been read.
+    quarters = {
+        fyq: [(key, rec["display"], rec["certified"], rec["denied"], rec["withdrawn"],
+               json.dumps(_top(rec["titles"], _YEAR_TITLES)),
+               json.dumps(_top(rec["states"], _YEAR_STATES)),
+               rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4],
+               rec["secondary"], rec["new_hires"])
+              for key, rec in employers.items()]
+        for fyq, employers in agg.items()}
+    _store_quarters(quarters, os.path.basename(src), args.replace)
+
+
+# Columns of lca_quarter_employers, in order: what export-lca writes and
+# load-lca --prebuilt reads back.
+_QUARTER_COLUMNS = ("fiscal_year", "quarter", "employer_norm", "employer_display",
+                    "certified", "denied", "withdrawn", "titles", "states",
+                    "lvl1", "lvl2", "lvl3", "lvl4", "secondary", "new_hires")
+
+
+def _store_quarters(quarters, source, replace):
+    """Replace the given quarters in the database, then rebuild `employers`.
+
+    `quarters` maps (fiscal_year, quarter) to rows of lca_quarter_employers
+    without their first two columns. Called only once a whole file has been
+    read and checked, so a failed read leaves the database as it was.
+    """
     con = connect()
     loaded = con.execute("SELECT COUNT(*) FROM lca_quarters").fetchone()[0]
     # Employers loaded before quarters were tracked cannot be combined with others.
     legacy = not loaded and con.execute("SELECT COUNT(*) FROM employers").fetchone()[0]
-    if args.replace or legacy:
-        if legacy and not args.replace:
+    if replace or legacy:
+        if legacy and not replace:
             print("The employer data already loaded predates multi-year loading, so "
                   "this file replaces it. Load your other files again to combine them.")
         for table in ("employers", "lca_quarters", "lca_quarter_employers"):
             con.execute(f"DELETE FROM {table}")
 
-    for (fiscal_year, quarter), employers in agg.items():
+    placeholders = ",".join("?" * len(_QUARTER_COLUMNS))
+    for (fiscal_year, quarter), rows in quarters.items():
         con.execute("DELETE FROM lca_quarter_employers WHERE fiscal_year = ? "
                     "AND quarter = ?", (fiscal_year, quarter))
         con.executemany(
-            "INSERT INTO lca_quarter_employers (fiscal_year, quarter, employer_norm, "
-            "employer_display, certified, denied, withdrawn, titles, states, "
-            "lvl1, lvl2, lvl3, lvl4, secondary, new_hires) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [(fiscal_year, quarter, key, rec["display"], rec["certified"],
-              rec["denied"], rec["withdrawn"],
-              json.dumps(_top(rec["titles"], _YEAR_TITLES)),
-              json.dumps(_top(rec["states"], _YEAR_STATES)),
-              rec["lvl"][1], rec["lvl"][2], rec["lvl"][3], rec["lvl"][4],
-              rec["secondary"], rec["new_hires"])
-             for key, rec in employers.items()])
+            f"INSERT INTO lca_quarter_employers ({', '.join(_QUARTER_COLUMNS)}) "
+            f"VALUES ({placeholders})",
+            [(fiscal_year, quarter, *row) for row in rows])
         con.execute("INSERT OR REPLACE INTO lca_quarters VALUES (?, ?, ?, ?)",
-                    (fiscal_year, quarter, os.path.basename(src),
-                     time.strftime("%Y-%m-%d %H:%M")))
+                    (fiscal_year, quarter, source, time.strftime("%Y-%m-%d %H:%M")))
     total = _rebuild_employers(con)
     held = _describe_quarters(con.execute(
         "SELECT fiscal_year, quarter FROM lca_quarters WHERE fiscal_year > 0"))
     con.commit()
     con.close()
-    this = _describe_quarters(q for q in agg if q[0]) or "a file with no decision dates"
+    this = _describe_quarters(q for q in quarters if q[0]) or "a file with no decision dates"
     print(f"Loaded {this}. {DB_PATH} now holds {total:,} employers"
           f"{', from ' + held if held else ''}.")
+
+
+# ----------------------------------------------------------- prebuilt table
+#
+# Loading DOL's files takes a 100-400 MB download per quarter and minutes of
+# parsing, and DOL blocks GitHub's runners. The per-quarter table those files
+# produce is a few MB, so each quarter it is built once with `export-lca` and
+# published as the `lca-latest` release, and `load-lca --prebuilt` reads it in
+# seconds. A pointer file names the data file and its SHA-256, so a truncated
+# or altered download is refused before anything changes.
+
+PREBUILT_LCA_URL = ("https://github.com/pruhnav/sponsorscan/releases/download/"
+                    "lca-latest/lca.json")
+
+
+def _read_prebuilt(pointer):
+    """(quarters, meta) from a prebuilt table, once its checksum matches."""
+    if pointer.startswith(("http://", "https://")):
+        try:
+            r = requests.get(pointer, headers=UA, timeout=60)
+            r.raise_for_status()
+            meta = r.json()
+            data_url = pointer.rsplit("/", 1)[0] + "/" + meta["file"]
+            d = requests.get(data_url, headers=UA, timeout=300)
+            d.raise_for_status()
+            data = d.content
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            raise SystemExit(f"Could not download the prebuilt table from {pointer}: "
+                             f"{exc}\nNothing was changed. Load a DOL file instead "
+                             "(see `load-lca --help`).") from None
+    else:
+        meta = json.loads(Path(pointer).read_text(encoding="utf-8"))
+        data = Path(pointer).with_name(meta["file"]).read_bytes()
+    if hashlib.sha256(data).hexdigest() != meta.get("sha256"):
+        raise SystemExit("The prebuilt table's checksum does not match its pointer "
+                         f"({pointer}), so the download is incomplete or altered. "
+                         "Nothing was changed. Try again, or load a DOL file instead.")
+    quarters = {}
+    for line in gzip.decompress(data).decode("utf-8").splitlines():
+        row = json.loads(line)
+        for field in ("titles", "states"):
+            row[field] = json.dumps(row[field])
+        quarters.setdefault((row["fiscal_year"], row["quarter"]), []).append(
+            tuple(row[c] for c in _QUARTER_COLUMNS[2:]))
+    return quarters, meta
+
+
+def cmd_export_lca(args):
+    """Write the per-quarter table and its pointer, ready to publish."""
+    con = connect()
+    rows = con.execute(f"SELECT {', '.join(_QUARTER_COLUMNS)} FROM lca_quarter_employers "
+                       "ORDER BY fiscal_year, quarter, employer_norm").fetchall()
+    held = _describe_quarters(con.execute(
+        "SELECT fiscal_year, quarter FROM lca_quarters WHERE fiscal_year > 0"))
+    employers = con.execute("SELECT COUNT(*) FROM employers").fetchone()[0]
+    con.close()
+    if not rows:
+        raise SystemExit("Nothing to export. Load DOL files with `load-lca` first.")
+    lines = []
+    for row in rows:
+        record = dict(zip(_QUARTER_COLUMNS, row))
+        for field in ("titles", "states"):
+            record[field] = json.loads(record[field] or "{}")
+        lines.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
+    # mtime=0, so the same table always compresses to the same bytes.
+    data = gzip.compress(("\n".join(lines) + "\n").encode("utf-8"), mtime=0)
+    out = Path(args.out)
+    out.write_bytes(data)
+    meta = {"format": "sponsorscan-lca", "version": 1, "file": out.name,
+            "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
+            "quarters": held, "employers": employers,
+            "built": time.strftime("%Y-%m-%d")}
+    pointer = out.with_name("lca.json")
+    pointer.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {out} ({len(data) / 1e6:.1f} MB, {employers:,} employers, {held}) "
+          f"and {pointer}.\nPublish both:  gh release upload lca-latest {out} {pointer} "
+          "--clobber")
 
 
 def _describe_quarters(quarters):
@@ -1411,8 +1520,18 @@ def main():
     a.add_argument("--latest", action="store_true",
                    help="Resolve the newest disclosure file from the DOL site "
                         "instead of passing a path")
+    a.add_argument("--prebuilt", nargs="?", const=PREBUILT_LCA_URL, default=None,
+                   metavar="POINTER",
+                   help="Load the employer table SponsorScan publishes each quarter, "
+                        "in seconds instead of minutes (or the lca.json at POINTER)")
     a.add_argument("--replace", action="store_true", help="Clear existing employer rows first")
     a.set_defaults(func=cmd_load_lca)
+
+    x = sub.add_parser("export-lca",
+                       help="Write the loaded LCA data as a prebuilt table, for publishing")
+    x.add_argument("out", nargs="?", default="lca.ndjson.gz",
+                   help="Data file to write; lca.json is written beside it")
+    x.set_defaults(func=cmd_export_lca)
 
     b = sub.add_parser("fetch-jobs", help="Pull live postings from ATS job boards")
     b.add_argument("--companies", default="companies.yaml")

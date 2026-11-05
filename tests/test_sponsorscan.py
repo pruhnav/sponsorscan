@@ -695,3 +695,76 @@ def test_load_counts_client_site_placements_and_new_hires(monkeypatch, tmp_path)
                       "WHERE employer_norm = 'placer'").fetchone()
     con.close()
     assert row == (2, 1)
+
+
+# ------------------------------------------------------- prebuilt table
+#
+# export-lca writes the per-quarter table and a pointer with its checksum;
+# load-lca --prebuilt reads them back. Tests use local paths, never the network.
+
+def _employers(db):
+    import sqlite3
+    con = sqlite3.connect(db)
+    rows = sorted(con.execute("SELECT employer_norm, certified, first_fy, last_fy, "
+                              "secondary, new_hires FROM employers"))
+    con.close()
+    return rows
+
+
+def _prebuilt(pointer, replace=False):
+    import argparse
+    ss.cmd_load_lca(argparse.Namespace(path=None, latest=False, prebuilt=str(pointer),
+                                       replace=replace))
+
+
+def _export(monkeypatch, tmp_path):
+    import argparse
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "source.db"))
+    _load(_lca_file(tmp_path / "a.csv", [(ACME, "2025-09-30")] * 3 +
+                    [(ACME, Q1), ("Globex", Q1)]), replace=True)
+    out = tmp_path / "release" / "lca.ndjson.gz"
+    out.parent.mkdir()
+    ss.cmd_export_lca(argparse.Namespace(out=str(out)))
+    return out, out.with_name("lca.json")
+
+
+def test_export_and_prebuilt_load_round_trip(monkeypatch, tmp_path):
+    import json
+    _, pointer = _export(monkeypatch, tmp_path)
+    meta = json.loads(pointer.read_text(encoding="utf-8"))
+    assert meta["file"] == "lca.ndjson.gz" and len(meta["sha256"]) == 64
+    assert meta["quarters"] == "FY2025 Q4, FY2026 Q1"
+
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "fresh.db"))
+    _prebuilt(pointer, replace=True)
+    assert _employers(tmp_path / "fresh.db") == _employers(tmp_path / "source.db")
+
+
+def test_a_tampered_prebuilt_file_changes_nothing(monkeypatch, tmp_path):
+    data, pointer = _export(monkeypatch, tmp_path)
+    data.write_bytes(data.read_bytes() + b"x")
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "fresh.db"))
+    _load(_lca_file(tmp_path / "b.csv", [("Initech", Q3)]), replace=True)
+    before = _employers(tmp_path / "fresh.db")
+    with pytest.raises(SystemExit, match="checksum"):
+        _prebuilt(pointer, replace=True)
+    assert _employers(tmp_path / "fresh.db") == before
+
+
+def test_prebuilt_table_combines_with_a_dol_file(monkeypatch, tmp_path):
+    _, pointer = _export(monkeypatch, tmp_path)
+    monkeypatch.setattr(ss, "DB_PATH", str(tmp_path / "fresh.db"))
+    _prebuilt(pointer, replace=True)
+    _load(_lca_file(tmp_path / "b.csv", [(ACME, Q3)] * 2))
+    import sqlite3
+    con = sqlite3.connect(tmp_path / "fresh.db")
+    assert con.execute("SELECT certified, first_fy, last_fy FROM employers "
+                       "WHERE employer_norm = 'acme'").fetchone() == (6, 2025, 2026)
+    con.close()
+
+
+def test_ties_in_top_lists_break_alphabetically():
+    # So a table rebuilt from the prebuilt file lists titles in the same order
+    # as the database it was exported from, whatever order the rows came in.
+    assert list(ss._top({"b": 1, "a": 1, "c": 2}, 3)) == ["c", "a", "b"]
+    assert list(ss._top({"a": 1, "b": 1, "c": 2}, 3)) == ["c", "a", "b"]

@@ -107,12 +107,19 @@ command is documented in [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ### 1. Load the sponsorship data
 
-SponsorScan reads the quarterly **LCA Programs (H-1B, H-1B1, E-3)** disclosure
-file published by the DOL. It is an `.xlsx` file, typically 100-400 MB, and the
-filename changes each quarter.
+SponsorScan's sponsorship history comes from the DOL's quarterly **LCA Programs
+(H-1B, H-1B1, E-3)** disclosure files. Each quarter, SponsorScan publishes the
+employer table built from them, a few MB, so loading takes seconds:
+
+```powershell
+python sponsorscan.py load-lca --prebuilt --replace
+```
 
 U.S. citizens and permanent residents can skip this step. Their reports ignore
 sponsorship history; see [docs/CITIZEN_SETUP.md](docs/CITIZEN_SETUP.md).
+
+To build the table yourself straight from the DOL instead, which is a 100-400 MB
+`.xlsx` download per quarter and a few minutes of loading:
 
 ```powershell
 python sponsorscan.py load-lca --latest --replace

@@ -112,10 +112,13 @@ commands you run, and yours are not visible to theirs. Choose one of these:
 ### Stage 1: install and first report
 
 Follow `README.md`: create a virtual environment, `pip install -r
-requirements.txt`, then `load-lca --latest --replace`, `fetch-jobs --replace`,
-`report`. Citizens and permanent residents skip `load-lca`. The LCA download
-is 100-400 MB and loading takes minutes; say so before starting. If the DOL
-site blocks the download, `load-lca` prints the manual route.
+requirements.txt`, then `load-lca --prebuilt --replace`, `fetch-jobs --replace`,
+`report`. Citizens and permanent residents skip `load-lca`. `--prebuilt` loads
+the employer table published as this repository's `lca-latest` release in
+seconds. Only if that fails, or the user wants data straight from the DOL, use
+`load-lca --latest --replace`: a 100-400 MB download and minutes of loading, so
+say so before starting. If the DOL site blocks it, `load-lca` prints the manual
+route.
 
 ### Stage 2: profile
 

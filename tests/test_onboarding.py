@@ -1108,3 +1108,35 @@ def test_onboarding_does_not_import_the_report():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          cwd=str(__import__('pathlib').Path(__file__).resolve().parent.parent))
     assert out.stdout.strip() == "False", out.stderr
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_setup_sections_cover_every_extra_and_hide_secrets(windows):
+    from onboarding import setup_sections
+
+    sections = {section["id"]: section for section in setup_sections(
+        _guide_profile(), ".sponsorscan-dashboard/profile.json", windows=windows)}
+    assert list(sections) == ["check", "telegram", "email", "sheets", "schedule"]
+    commands = [command for section in sections.values() for step in section["steps"]
+                for command in step.get("commands", [])]
+    token = next(line for line in commands if "TELEGRAM_BOT_TOKEN" in line and "gh " not in line)
+    assert ("Read-Host" in token) if windows else ("read -s" in token)
+    # A dashboard profile lives outside profiles/, so the schedule copies it in.
+    schedule = [command for step in sections["schedule"]["steps"] for command in step.get("commands", [])]
+    assert "git add -f profiles/casey.json" in schedule
+    assert any(line.startswith("Copy-Item" if windows else "cp ") and line.endswith("profiles/casey.json")
+               for line in schedule)
+
+
+@pytest.mark.parametrize("env, status", [
+    ({"TELEGRAM_BOT_TOKEN": "x"}, "WARN"),          # the chat ID step was skipped
+    ({"TELEGRAM_CHAT_ID": "42"}, "WARN"),
+    ({"TELEGRAM_BOT_TOKEN": "x", "TELEGRAM_CHAT_ID": "42"}, "OK"),
+    ({}, "OK"),                                      # Telegram not in use
+])
+def test_doctor_flags_half_configured_telegram(env, status):
+    profile = {"notifications": {"email_enabled": False, "google_sheets_enabled": False}}
+    result = warn_notification_env(profile, env=env)
+    assert result.status == status
+    if status == "WARN":
+        assert "docs/TELEGRAM_SETUP.md" in result.message and "--find-chat" in result.message

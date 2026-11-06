@@ -16,6 +16,11 @@
 # `name` is the company name shown in reports, and also what gets matched
 # against DOL employer names. Omit it and the slug is used instead.
 #
+# `domain` is the company's website, where the dashboard finds its logo.
+# `logo` is optional: an https image address to use instead, for sites that
+# turn away scripts. You can also drop a file named <domain>.png into the
+# dashboard's logos/ folder.
+#
 # `lca_name` is optional: the name the company files under at DOL, when that
 # differs from its brand (Instacart files as Maplebear Inc). Matching then uses
 # it, while reports still show `name`. To find a company's filing name, run a
@@ -24,45 +29,70 @@
 
 companies:
   greenhouse:
-    - {slug: databricks, name: Databricks}
-    - {slug: stripe, name: Stripe}
-    - {slug: airbnb, name: Airbnb}
-    - {slug: robinhood, name: Robinhood Markets}
-    - {slug: doordashusa, name: DoorDash}
-    - {slug: instacart, name: Instacart, lca_name: Maplebear}
-    - {slug: samsara, name: Samsara}
-    - {slug: gitlab, name: GitLab}
-    - {slug: cloudflare, name: Cloudflare}
-    - {slug: nuro, name: Nuro}
-    - {slug: attentive, name: Attentive Mobile}
-    - {slug: vercel, name: Vercel}
+    - {slug: databricks, name: Databricks, domain: databricks.com}
+    - {slug: stripe, name: Stripe, domain: stripe.com}
+    - {slug: airbnb, name: Airbnb, domain: airbnb.com}
+    - {slug: robinhood, name: Robinhood Markets, domain: robinhood.com}
+    - {slug: doordashusa, name: DoorDash, domain: doordash.com}
+    - {slug: instacart, name: Instacart, lca_name: Maplebear, domain: instacart.com}
+    - {slug: samsara, name: Samsara, domain: samsara.com}
+    - {slug: gitlab, name: GitLab, domain: gitlab.com}
+    - {slug: cloudflare, name: Cloudflare, domain: cloudflare.com}
+    - {slug: nuro, name: Nuro, domain: nuro.ai}
+    - {slug: attentive, name: Attentive Mobile, domain: attentive.com}
+    - {slug: vercel, name: Vercel, domain: vercel.com}
 
   ashby:
-    - {slug: openai, name: OpenAI}
-    - {slug: ramp, name: Ramp Business Corporation}
-    - {slug: notion, name: Notion Labs}
-    - {slug: linear, name: Linear Orbit}
-    - {slug: benchling, name: Benchling}
-    - {slug: plaid, name: Plaid}
+    - {slug: openai, name: OpenAI, domain: openai.com}
+    - {slug: ramp, name: Ramp Business Corporation, domain: ramp.com}
+    - {slug: notion, name: Notion Labs, domain: notion.com}
+    - {slug: linear, name: Linear Orbit, domain: linear.app}
+    - {slug: benchling, name: Benchling, domain: benchling.com}
+    - {slug: plaid, name: Plaid, domain: plaid.com}
 
   # Large employers, which file most LCAs, post on Workday. Fetching reads
   # every listing but only opens postings from the last few days; see
   # --workday-days. discover cannot guess these slugs, so add them by hand.
   workday:
-    - {slug: nvidia/wd5/NVIDIAExternalCareerSite, name: NVIDIA}
-    - {slug: adobe/wd5/external_experienced, name: Adobe}
-    - {slug: salesforce/wd12/External_Career_Site, name: Salesforce}
-    - {slug: intel/wd1/External, name: Intel}
-    - {slug: capitalone/wd12/Capital_One, name: Capital One Services}
-    - {slug: workday/wd5/Workday, name: Workday}
-    - {slug: mastercard/wd1/CorporateCareers, name: Mastercard International}
-    - {slug: paypal/wd1/jobs, name: PayPal}
-    - {slug: micron/wd1/External, name: Micron Technology}
-    - {slug: broadcom/wd1/External_Career, name: Broadcom}
-    - {slug: autodesk/wd1/Ext, name: Autodesk}
-    - {slug: hp/wd5/ExternalCareerSite, name: HP}
-    - {slug: cisco/wd5/cisco_careers, name: Cisco Systems}
-    - {slug: netflix/wd108/netflix, name: Netflix}
+    - {slug: nvidia/wd5/NVIDIAExternalCareerSite, name: NVIDIA, domain: nvidia.com}
+    - {slug: adobe/wd5/external_experienced, name: Adobe, domain: adobe.com}
+    - {slug: salesforce/wd12/External_Career_Site, name: Salesforce, domain: salesforce.com}
+    - {slug: intel/wd1/External, name: Intel, domain: intel.com}
+    - {slug: capitalone/wd12/Capital_One, name: Capital One Services, domain: capitalone.com}
+    - {slug: workday/wd5/Workday, name: Workday, domain: workday.com}
+    - {slug: mastercard/wd1/CorporateCareers, name: Mastercard International, domain: mastercard.com,
+       logo: "https://commons.wikimedia.org/wiki/Special:FilePath/Mastercard-logo.svg?width=256"}
+    - {slug: paypal/wd1/jobs, name: PayPal, domain: paypal.com}
+    - {slug: micron/wd1/External, name: Micron Technology, domain: micron.com}
+    - {slug: broadcom/wd1/External_Career, name: Broadcom, domain: broadcom.com}
+    - {slug: autodesk/wd1/Ext, name: Autodesk, domain: autodesk.com}
+    - {slug: hp/wd5/ExternalCareerSite, name: HP, domain: hp.com}
+    # logo: an image address, for sites that turn away anything but a browser.
+    - {slug: cisco/wd5/cisco_careers, name: Cisco Systems, domain: cisco.com,
+       logo: "https://commons.wikimedia.org/wiki/Special:FilePath/Cisco_logo_blue_2016.svg?width=256"}
+    - {slug: netflix/wd108/netflix, name: Netflix, domain: netflix.com}
+    - {slug: fmr/wd1/FidelityCareers, name: Fidelity Investments, lca_name: Fidelity Technology Group, domain: fidelity.com}
+    # A big board can be narrowed to its own categories, here Technology and
+    # Data Analytics, since most of Walmart's openings are in stores.
+    - {slug: "walmart/wd504/WalmartExternal?jobFamilyGroup=e83ebdbd2a0a01e7e1477a8948e904c6&jobFamilyGroup=e83ebdbd2a0a01af0185848948e94dc6",
+       name: Walmart, lca_name: Wal-Mart Associates, domain: walmart.com}
+
+  # Amazon, the largest H-1B filer, runs its own job site. One search covers
+  # all of Amazon (AWS, Devices, Ring...), so the slug lists job categories as
+  # they appear in amazon.jobs URLs, separated by commas. "all" searches every
+  # category, which mostly adds non-engineering roles.
+  amazon:
+    - {slug: "software-development,machine-learning-science,data-science,research-science,solutions-architect",
+       name: Amazon, lca_name: Amazon.com Services, domain: amazon.com}
+
+  # Microsoft and other employers whose career sites run on Eightfold. The
+  # slug is the careers search address: domain= names the employer and each
+  # query= is one search. Only the newest 150 postings per query are read,
+  # and senior or level II+ titles are skipped, because the site refuses
+  # bursts of requests.
+  eightfold:
+    - {slug: "apply.careers.microsoft.com/careers?domain=microsoft.com&query=software engineer&query=data scientist&query=applied scientist",
+       name: Microsoft, lca_name: Microsoft Corporation, domain: microsoft.com}
 
 # Cap-exempt employers (universities, university-affiliated nonprofits, national
 # labs) often run Workday too, so their boards can be added the same way.

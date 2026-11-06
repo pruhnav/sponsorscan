@@ -69,3 +69,6 @@ desktop.ini
 tmp/
 temp/
 *.tmp
+
+# Browser automation output (screenshots, page snapshots)
+.playwright-mcp/

@@ -3,59 +3,123 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#fafafa">
+  <meta name="theme-color" content="#ffffff">
   <title>SponsorScan | Your workspace</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzExMSIvPjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiI+PHJlY3QgeD0iNyIgeT0iMTEiIHdpZHRoPSIxOCIgaGVpZ2h0PSIxNSIgcng9IjIiLz48cGF0aCBkPSJNMTIgMTFWN2g4djRNNyAxN2gxOCIvPjwvZz48L3N2Zz4=">
+  <link rel="preload" href="/hanken-grotesk.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js"></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-matches" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="4.5" height="15" rx="1.5"/><rect x="9.75" y="4.5" width="4.5" height="10" rx="1.5"/><rect x="16" y="4.5" width="4.5" height="6.5" rx="1.5"/></symbol>
+  <symbol id="i-profile" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5c1.2-3.3 4-5 7-5s5.8 1.7 7 5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M7 4.5h10a1 1 0 0 1 1 1V20l-6-4-6 4V5.5a1 1 0 0 1 1-1Z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V14M13.5 5H19v5.5M19 5l-8 8"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 19h19"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0v-3ZM12 16v4.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5 3.5 10.6l6.6 2.8 2.8 6.6 7.6-16.5ZM10.1 13.4l4.6-4.6"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></symbol>
+  <symbol id="i-table" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.4 2.4 4.8-5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="b-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#2AABEE"/><path fill="#fff" d="M5.4 11.8l11.2-4.3c.5-.2 1 .1.8.9l-1.9 9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.4c-.2.2-.3.3-.6.3l.2-3 5.4-4.9c.2-.2-.1-.3-.4-.1l-6.6 4.2-2.9-.9c-.6-.2-.6-.6.1-1z"/></symbol>
+  <symbol id="b-email" viewBox="0 0 24 24"><path fill="#4285F4" d="M2 7.2V18a1.5 1.5 0 0 0 1.5 1.5H6V10.4L2 7.2z"/><path fill="#34A853" d="M18 19.5h2.5A1.5 1.5 0 0 0 22 18V7.2l-4 3.2z"/><path fill="#FBBC04" d="M18 5.6v4.8l4-3.2V6.1c0-1.4-1.6-2.2-2.7-1.4z"/><path fill="#C5221F" d="M2 6.1v1.1l4 3.2V5.6L4.7 4.7C3.6 3.9 2 4.7 2 6.1z"/><path fill="#EA4335" d="M6 10.4V5.6l6 4.5 6-4.5v4.8l-6 4.5z"/></symbol>
+  <symbol id="b-sheets" viewBox="0 0 24 24"><path fill="#0F9D58" d="M14.5 2h-8A1.5 1.5 0 0 0 5 3.5v17A1.5 1.5 0 0 0 6.5 22h11a1.5 1.5 0 0 0 1.5-1.5v-14z"/><path fill="#87CEAC" d="M14.5 2v3a1.5 1.5 0 0 0 1.5 1.5h3z"/><path fill="#fff" d="M8 10.5h8v7H8z"/><path fill="none" stroke="#0F9D58" stroke-width="1.1" d="M8 12.85h8M8 15.15h8M11.4 10.5v7"/></symbol>
+  <symbol id="b-schedule" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .3C5.37.3 0 5.67 0 12.3c0 5.3 3.44 9.8 8.2 11.38.6.11.82-.26.82-.58v-2.04c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.21.69.82.57A12 12 0 0 0 24 12.3C24 5.67 18.63.3 12 .3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5"/></symbol>
+  <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6.5 13.5 12 19l5.5-5.5"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19.5 12h-15M10.5 6l-6 6 6 6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M6 18l1.4-1.4M16.6 7.4 18 6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5Z"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5"/><path d="M9 20h6M12 16v4"/></symbol>
+</svg>
 <a class="skip" href="#main">Skip to content</a>
-<aside class="sidebar">
-  <a class="brand" href="#matches" aria-label="SponsorScan home"><svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h7m4 0h7"/><rect x="10" y="10" width="4" height="4" rx="1"/></svg><span>sponsorscan.</span></a>
-  <p class="workspace-label">YOUR WORKSPACE</p>
-  <nav aria-label="Workspace">
-    <a href="#matches" data-view="matches"><span>Matches</span><span id="nav-matches">0</span></a>
-    <a href="#applications" data-view="applications"><span>Applications</span><span id="nav-applications">0</span></a>
-    <a href="#profile" data-view="profile"><span>Profile</span></a>
-  </nav>
-  <div class="sidebar-bottom"><span class="local-dot" aria-hidden="true"></span> Local to this computer<p>Your profile and applications stay here.</p></div>
-</aside>
+<header class="appbar">
+  <div class="appbar-inner">
+    <a class="brand" href="#matches" aria-label="SponsorScan home"><svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h7m4 0h7"/><rect x="10" y="10" width="4" height="4" rx="1"/></svg><span>sponsorscan.</span></a>
+    <nav aria-label="Workspace">
+      <a href="#matches" data-view="matches"><svg class="nav-icon" aria-hidden="true"><use href="#i-matches"/></svg><span>Matches</span><span class="count" id="nav-matches">0</span></a>
+      <a href="#applications" data-view="applications"><svg class="nav-icon" aria-hidden="true"><use href="#i-board"/></svg><span>Applications</span><span class="count" id="nav-applications">0</span></a>
+      <a href="#integrations" data-view="integrations"><svg class="nav-icon" aria-hidden="true"><use href="#i-plug"/></svg><span>Integrations</span></a>
+      <a href="#profile" data-view="profile"><svg class="nav-icon" aria-hidden="true"><use href="#i-profile"/></svg><span>Profile</span></a>
+    </nav>
+    <div class="appbar-end">
+      <span id="profile-label">Personal workspace</span><time id="clock" class="clock"></time><span id="connection" class="connection">Connecting...</span>
+      <div class="theme-slot"><div class="theme-switch" role="group" aria-label="Theme">
+        <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light theme" title="Light"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg></button>
+        <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark theme" title="Dark"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
+        <button type="button" data-theme-choice="system" aria-pressed="false" aria-label="Match system theme" title="System"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></button>
+      </div></div>
+    </div>
+  </div>
+</header>
 <main id="main">
-  <header class="topbar"><span id="profile-label">Personal workspace</span><span id="connection">Connecting...</span></header>
   <div class="content">
-    <div id="notice" role="status" aria-live="polite" hidden></div>
-    <div id="task-status" role="status" aria-live="polite" hidden></div>
+    <div id="task-status" class="task-status" role="status" aria-live="polite" hidden></div>
     <section id="view-matches" class="view" aria-labelledby="matches-title">
-      <div class="page-heading"><div><p class="eyebrow">YOUR JOB SEARCH</p><h1 id="matches-title">Find your next role.</h1><p>Jobs matched to your profile, with the evidence behind each result.</p></div><div class="heading-actions"><button id="refresh" class="button secondary">Refresh matches</button><button id="fetch-jobs" class="button">Fetch jobs</button></div></div>
-      <div class="data-status"><span id="data-summary">Checking local data...</span><button id="load-history" class="text-button">Load employer history</button></div>
-      <div id="warnings" class="warnings" hidden></div>
-      <div class="summary" aria-label="Search summary"><div><span>Matching roles</span><strong id="match-count">0</strong></div><div><span>Saved to review</span><strong id="saved-count">0</strong></div><div><span>Applications sent</span><strong id="applied-count">0</strong></div></div>
-      <div class="toolbar"><label class="search"><span class="sr-only">Search matches</span><input id="match-search" type="search" placeholder="Search title, company, or location"></label><label><span class="sr-only">Role family</span><select id="role-filter"><option value="">All roles</option></select></label><label><span class="sr-only">Sort matches</span><select id="match-sort"><option value="recent">Most recent</option><option value="score">Highest fit</option></select></label><button id="export-matches" class="text-button">Export CSV</button></div>
-      <p id="results-label" class="results-label" aria-live="polite"></p>
-      <div id="matches-list" class="jobs-list"></div>
-      <details id="exclusions" class="exclusions"><summary>Why other jobs were filtered out</summary><p>These are the matching engine's exclusions, not employer hiring decisions.</p><div id="excluded-list"></div></details>
+      <div class="page-heading">
+        <div><h1 id="matches-title">Matches</h1><p class="data-status"><span id="data-summary">Checking local data...</span> <button id="load-history" class="text-button">Update filing history</button></p></div>
+        <div class="heading-actions"><button id="refresh" class="button secondary"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button><button id="fetch-jobs" class="button">Fetch jobs</button></div>
+      </div>
+      <div id="warnings" class="alert" hidden></div>
+      <div class="summary" aria-label="Search summary">
+        <div class="stat"><span>Matching roles</span><strong id="match-count">0</strong></div>
+        <div class="stat"><span>Saved to review</span><strong id="saved-count">0</strong></div>
+        <div class="stat"><span>Applications sent</span><strong id="applied-count">0</strong></div>
+      </div>
+      <div class="toolbar">
+        <label class="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span class="sr-only">Search matches</span><input id="match-search" type="search" placeholder="Search title, company, or location"></label>
+        <div class="field"><span id="role-filter-label" class="sr-only">Role</span><select id="role-filter" aria-labelledby="role-filter-label"><option value="">All roles</option></select></div>
+        <div class="field"><span id="match-sort-label" class="sr-only">Sort by</span><select id="match-sort" aria-labelledby="match-sort-label"><option value="recent">Most recent</option><option value="oldest">Oldest first</option><option value="fit">Highest fit</option><option value="fit-low">Lowest fit</option><option value="filings">Most H-1B filings</option></select></div>
+        <button id="filings-toggle" type="button" class="switch" role="switch" aria-checked="true" hidden><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>H-1B filings</button>
+        <p id="results-label" class="results-label" aria-live="polite"></p>
+        <button id="export-matches" class="button secondary"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export CSV</button>
+      </div>
+      <div id="matches-card" class="list-card"><div id="matches-head" class="list-head"></div><div id="matches-list" class="jobs-list"><p class="loading">Loading your matches...</p></div></div>
+      <details id="exclusions" class="exclusions"><summary><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>Why other jobs were filtered out</summary><p>These are the matching engine's exclusions, not employer hiring decisions.</p><div id="excluded-list"></div></details>
       <p class="footnote">Profile fit is a ranking heuristic, not an ATS score. Employer filing history does not confirm sponsorship for a specific role.</p>
     </section>
     <section id="view-applications" class="view" hidden aria-labelledby="applications-title">
-      <div class="page-heading"><div><p class="eyebrow">KEEP TRACK</p><h1 id="applications-title">Your applications.</h1><p>Keep a record of what you saved, where you applied, and what happened next.</p></div><button id="add-application" class="button">Add application</button></div>
-      <div class="toolbar"><label class="search"><span class="sr-only">Search applications</span><input id="application-search" type="search" placeholder="Search your applications"></label><label><span class="sr-only">Application status</span><select id="status-filter"><option value="">All statuses</option><option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select></label><button id="export-applications" class="text-button">Export CSV</button></div>
-      <div id="applications-list" class="jobs-list"></div>
+      <div class="page-heading"><div><h1 id="applications-title">Applications</h1><p>Keep a record of what you saved, where you applied, and what happened next.</p></div><div class="heading-actions"><button id="add-application" class="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Add application</button></div></div>
+      <div class="toolbar">
+        <label class="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span class="sr-only">Search applications</span><input id="application-search" type="search" placeholder="Search your applications"></label>
+        <div class="field"><span id="status-filter-label" class="sr-only">Status</span><select id="status-filter" aria-labelledby="status-filter-label"><option value="">All statuses</option><option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select></div>
+        <button id="export-applications" class="button secondary push"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export CSV</button>
+      </div>
+      <div class="list-card tracking"><div id="applications-list" class="jobs-list"></div></div>
       <p class="footnote">Statuses are updated by you. Opening a posting does not mark it as applied. Saved records stay available when jobs leave the feed.</p>
     </section>
+    <section id="view-integrations" class="view" hidden aria-labelledby="integrations-title">
+      <div class="page-heading"><div><h1 id="integrations-title">Integrations</h1><p>Get new matches outside the dashboard. Setup happens in your terminal: each step says what to do, with commands you can copy. Passwords and tokens are always typed into a hidden prompt, never here.</p></div></div>
+      <div class="shell-row"><span id="shell-label">Show commands for</span><div class="segmented" role="group" aria-labelledby="shell-label"><button type="button" data-shell="windows" aria-pressed="false">PowerShell</button><button type="button" data-shell="posix" aria-pressed="false">macOS or Linux</button></div></div>
+      <div id="integrations-list" class="integrations-list"><p class="loading">Loading setup steps...</p></div>
+    </section>
     <section id="view-profile" class="view" hidden aria-labelledby="profile-title">
-      <div class="page-heading"><div><p id="profile-eyebrow" class="eyebrow">WORKSPACE SETUP</p><h1 id="profile-title">Make this search yours.</h1><p id="profile-intro">A few details to help SponsorScan find relevant roles. Everything is saved on this computer.</p></div></div>
+      <div class="page-heading"><div><h1 id="profile-title">Make this search yours.</h1><p id="profile-intro">A few details to help SponsorScan find relevant roles. Everything is saved on this computer.</p></div></div>
       <form id="profile-form" class="profile-form" novalidate>
         <ol id="setup-steps" class="setup-steps" aria-label="Profile setup progress">
-          <li><button type="button" data-step="0" aria-current="step" disabled><span>01</span> About you</button></li>
-          <li><button type="button" data-step="1" disabled><span>02</span> Your search</button></li>
-          <li><button type="button" data-step="2" disabled><span>03</span> Your skills</button></li>
-          <li><button type="button" data-step="3" disabled><span>04</span> Review</button></li>
+          <li><button type="button" data-step="0" aria-current="step" disabled><span>1</span> About you</button></li>
+          <li><button type="button" data-step="1" disabled><span>2</span> Your search</button></li>
+          <li><button type="button" data-step="2" disabled><span>3</span> Your skills</button></li>
+          <li><button type="button" data-step="3" disabled><span>4</span> Review</button></li>
         </ol>
         <fieldset id="profile-fields" class="profile-fields" disabled>
           <legend class="sr-only">Search profile</legend>
           <section class="setup-panel" data-panel="0" aria-labelledby="about-title">
-            <p class="step-count">STEP 1 OF 4</p><h2 id="about-title" tabindex="-1">Let's start with you.</h2><p class="step-intro">Your work authorization helps set the posting filters and whether employer sponsorship history matters.</p>
+            <h2 id="about-title" tabindex="-1">Let's start with you.</h2><p class="step-intro">Your work authorization helps set the posting filters and whether employer sponsorship history matters.</p>
             <label class="name-field">Your name<input name="name" maxlength="100" autocomplete="given-name" placeholder="e.g. Alex" required></label>
             <fieldset class="choice-group"><legend>What's your work authorization?</legend>
               <div class="authorization-options">
@@ -69,24 +133,24 @@
             <p id="authorization-note" class="context-note" aria-live="polite">Choose the option that matches your situation.</p>
           </section>
           <section class="setup-panel" data-panel="1" hidden aria-labelledby="search-title">
-            <p class="step-count">STEP 2 OF 4</p><h2 id="search-title" tabindex="-1">What are you looking for?</h2><p class="step-intro">Choose the roles you would apply for, then set how broad your search should be.</p>
+            <h2 id="search-title" tabindex="-1">What are you looking for?</h2><p class="step-intro">Choose the roles you would apply for, then set how broad your search should be.</p>
             <fieldset class="choice-group"><legend>Target roles <span class="optional">Choose one or more</span></legend><div id="role-choices" class="role-choices"></div></fieldset>
             <label for="custom-role">Another job title <span class="optional">Optional</span></label>
             <div class="input-action"><input id="custom-role" maxlength="150" placeholder="e.g. Product Engineer" list="role-suggestions"><button id="add-role" type="button" class="button secondary">Add role</button></div><datalist id="role-suggestions"></datalist>
             <div id="custom-roles" class="selected-roles"></div><p class="field-help">Custom titles are matched as written. Built-in role groups also recognize common title variations.</p>
-            <label>Preferred locations <span class="optional">Optional</span><input name="preferred_locations" placeholder="New York, Boston, Remote"><small>Separate with commas. These locations get a ranking boost; other U.S. locations still appear. Leave blank for no preference.</small></label>
+            <label>Preferred locations <span class="optional">Optional</span><input name="preferred_locations" placeholder="New York, Boston, Remote"><small>Cities or states, separated by commas. They get a ranking boost; other U.S. locations still appear. Every match is already in the U.S., so a country name like USA adds nothing. Leave blank for no preference.</small></label>
             <div class="form-grid"><label>Maximum experience a job can require<input name="max_required_experience" type="number" min="0" max="40" step="1" value="1" required><small>In years. Set 1 to include jobs asking for 0 or 1 year. This is the posting's requirement, not your experience.</small></label><label>How recent should postings be?<select name="report_hours"><option value="48">Last 2 days</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option><option value="2160">Last 90 days</option></select><small>Jobs without a usable posting date are excluded.</small></label></div>
           </section>
           <section class="setup-panel" data-panel="2" hidden aria-labelledby="skills-title">
-            <p class="step-count">STEP 3 OF 4</p><h2 id="skills-title" tabindex="-1">What do you bring to the role?</h2><p class="step-intro">Add skills from your resume and rate your familiarity. Stronger skills carry more weight when ranking jobs.</p>
+            <h2 id="skills-title" tabindex="-1">What do you bring to the role?</h2><p class="step-intro">Add skills from your resume and rate your familiarity. Stronger skills carry more weight when ranking jobs.</p>
             <label for="skill-input">Add a skill</label><div class="input-action"><input id="skill-input" maxlength="1500" placeholder="e.g. Python, SQL, JavaScript" list="skill-suggestions"><button id="add-skill" type="button" class="button secondary">Add skill</button></div><datalist id="skill-suggestions"></datalist>
             <p class="field-help">Use a suggestion, or add your own. You can paste several skills separated by commas.</p>
             <div id="suggested-skills" class="suggested-skills" aria-label="Common skills"></div>
-            <div class="skills-heading"><span>YOUR SKILLS</span><span>FAMILIARITY</span></div><div id="skills-list" class="skills-list"></div>
+            <div class="skills-heading"><span>Your skills</span><span>Familiarity</span></div><div id="skills-list" class="skills-list"></div>
             <p class="context-note">Strong: a core skill. Comfortable: you can use it independently. Familiar: you have some exposure.</p>
           </section>
           <section class="setup-panel" data-panel="3" hidden aria-labelledby="review-title">
-            <p class="step-count">STEP 4 OF 4</p><h2 id="review-title" tabindex="-1">Ready to build your shortlist?</h2><p class="step-intro">Check your choices. You can change them later in Profile.</p>
+            <h2 id="review-title" tabindex="-1">Ready to build your shortlist?</h2><p class="step-intro">Check your choices. You can change them later in Profile.</p>
             <dl id="profile-review" class="profile-review"></dl>
             <details class="advanced"><summary>Filters and ranking</summary><p class="field-help">These are the rules your profile will use. Advanced filters can also be changed in your profile JSON.</p><ul id="review-filters" class="review-filters"></ul><label>Minimum combined score<input name="minimum_score" type="number" min="0" max="500" step="1" value="95" required><small>Combines profile fit, career level, and employer signals. This is not a percentage. Lower it to include more matches.</small></label></details>
             <fieldset class="choice-group integrations"><legend>Results outside the dashboard <span class="optional">Optional</span></legend><p class="field-help">Use the dashboard on its own, or save a preference to set up one of these later.</p>
@@ -94,32 +158,53 @@
               <label class="choice-row"><input type="checkbox" name="google_sheets_enabled"><span><strong>Google Sheets</strong><small>Copy results to a Sheet. Requires a service account and spreadsheet access.</small></span></label>
             </fieldset>
             <p id="integration-note" class="field-help" aria-live="polite">No account is needed to use the local dashboard.</p>
-            <button id="open-setup-guide" type="button" class="text-button" hidden>Read setup instructions for your saved profile</button>
+            <a id="open-setup-guide" href="#integrations" class="text-button" hidden>Open the setup steps in Integrations</a>
           </section>
           <p id="profile-save-status" class="form-error" role="alert" tabindex="-1" hidden></p>
-          <div class="form-footer setup-footer"><button id="setup-back" type="button" class="text-button" hidden>&#8592; Back</button><span id="setup-save-note">Your profile is saved at the final step.</span><button id="setup-next" type="submit" class="button">Continue &#8594;</button></div>
+          <div class="form-footer setup-footer"><button id="setup-back" type="button" class="text-button" hidden><svg class="icon" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back</button><span id="setup-save-note">Your profile is saved at the final step.</span><button id="setup-next" type="submit" class="button">Continue<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button></div>
         </fieldset>
       </form>
       <section id="setup-complete" class="setup-complete" hidden aria-labelledby="complete-title">
-        <p class="step-count">PROFILE SAVED</p><h2 id="complete-title" tabindex="-1">Your workspace is ready.</h2><p class="step-intro">Now bring in the data for your first shortlist.</p>
+        <h2 id="complete-title" tabindex="-1">Your workspace is ready.</h2><p class="step-intro">Now bring in the data for your first shortlist.</p>
         <div id="finish-history-row" class="next-action"><div><h3>Employer sponsorship history</h3><p id="finish-history-status">Download the prebuilt employer table to include filing history in your rankings.</p></div><button id="finish-history" type="button" class="button secondary">Load history</button></div>
         <div class="next-action"><div><h3>Current job postings</h3><p id="finish-jobs-status">Fetch roles from the job boards in your company list.</p></div><button id="finish-fetch" type="button" class="button secondary">Fetch jobs</button></div>
-        <div id="finish-extras-row" class="next-action" hidden><div><h3>Set up your extras</h3><p>Preferences saved. Follow the instructions and run the connection checks in your terminal.</p></div><button id="finish-guide" type="button" class="text-button">Read instructions</button></div>
+        <div id="finish-extras-row" class="next-action" hidden><div><h3>Set up your extras</h3><p>Preferences saved. Follow the instructions and run the connection checks in your terminal.</p></div><a id="finish-guide" href="#integrations" class="text-button">Open Integrations</a></div>
         <p class="field-help">Fetching needs an internet connection. This dashboard updates when you ask it to; scheduled delivery is a separate setup.</p>
-        <div class="form-footer"><a href="#matches" class="button">Open matches &#8594;</a><button id="edit-profile" type="button" class="text-button">Edit profile</button></div>
+        <div class="form-footer"><a href="#matches" class="button">Open matches<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></a><button id="edit-profile" type="button" class="text-button">Edit profile</button></div>
       </section>
     </section>
   </div>
 </main>
-<dialog id="setup-guide-dialog" aria-labelledby="setup-guide-title"><button id="close-setup-guide" type="button" class="close" aria-label="Close setup instructions">&#215;</button><h2 id="setup-guide-title">Finish your optional setup.</h2><p class="muted">Run these steps from your SponsorScan folder. Enter passwords only in your own terminal. These instructions use your saved profile and output filenames.</p><pre id="setup-guide-text" tabindex="0"></pre></dialog>
+<footer class="app-footer"><div class="app-footer-inner"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg><p><strong>Local to this computer.</strong> Your profile and applications stay here. The dashboard goes online only to fetch jobs, filing history and company logos.</p></div></footer>
+<div id="notice" class="toast" role="status" aria-live="polite" hidden><p id="notice-text"></p><button id="notice-action" type="button" class="toast-action" hidden></button><button id="notice-close" type="button" class="icon-button" aria-label="Dismiss message"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+<div id="apply-prompt" class="apply-prompt" role="dialog" aria-modal="false" aria-labelledby="apply-prompt-title" hidden><span id="apply-prompt-logo" class="logo" aria-hidden="true"></span><div class="apply-prompt-text"><p id="apply-prompt-title" class="apply-prompt-title"></p><p id="apply-prompt-role" class="muted"></p></div><div class="apply-prompt-actions"><button id="apply-yes" type="button" class="button">Yes, I applied</button><button id="apply-no" type="button" class="button secondary">Not yet</button></div></div>
 <dialog id="job-dialog" aria-labelledby="detail-title">
-  <button id="close-detail" class="close" aria-label="Close job details">&#215;</button>
-  <p id="detail-company" class="eyebrow"></p><h2 id="detail-title"></h2><p id="detail-location" class="muted"></p>
-  <div class="detail-actions"><a id="open-posting" class="button" target="_blank" rel="noopener noreferrer">Open posting &#8599;</a><span id="detail-source" class="muted"></span></div>
-  <div id="detail-evidence"><h3>Why this job matched</h3><ul id="detail-reasons"></ul><div id="detail-filings" class="filings"></div><p class="footnote">Filing counts describe past employer activity. Verify the current role's sponsorship policy with the employer.</p></div>
-  <form id="application-form"><label>Status<select id="detail-status"><option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select></label><label>Notes<textarea id="detail-notes" rows="4" maxlength="10000" placeholder="Referral, recruiter, next steps..."></textarea></label><button class="button" type="submit">Save changes</button><p id="detail-save-status" role="status"></p></form>
+  <div class="detail-head">
+    <span id="detail-logo" class="logo logo-lg" aria-hidden="true"></span>
+    <div class="detail-heading"><p id="detail-company" class="detail-company"></p><h2 id="detail-title"></h2><p class="detail-facts"><span id="detail-location"></span><span id="detail-posted"></span><span id="detail-source"></span></p></div>
+    <button id="close-detail" type="button" class="close icon-button" aria-label="Close job details"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="detail-actions"><a id="open-posting" class="button" target="_blank" rel="noopener noreferrer">Open posting<svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a></div>
+  <section id="detail-fit" class="detail-section fit" aria-labelledby="fit-title" hidden>
+    <div class="fit-head"><h3 id="fit-title">Profile fit</h3><p id="fit-total" class="fit-total"></p></div>
+    <div id="fit-rows" class="fit-rows"></div>
+    <p id="fit-missing" class="fit-missing"></p>
+  </section>
+  <section id="detail-sponsorship" class="evidence" aria-labelledby="evidence-title">
+    <div class="evidence-head"><h3 id="evidence-title">Sponsorship history</h3><p id="detail-employer" class="muted"></p></div>
+    <div id="detail-chart"></div>
+    <dl id="detail-stats" class="evidence-stats"></dl>
+    <p class="evidence-note">Filing counts describe past employer activity. Verify the current role's sponsorship policy with the employer.</p>
+  </section>
+  <section id="detail-evidence" class="detail-section" aria-labelledby="reasons-title"><h3 id="reasons-title">Why this job matched</h3><ul id="detail-reasons" class="reasons"></ul></section>
+  <form id="application-form" class="detail-section application-form" aria-labelledby="application-title">
+    <h3 id="application-title">Your application</h3>
+    <div class="field"><span id="detail-status-label" class="field-label">Status</span><select id="detail-status" aria-labelledby="detail-status-label"><option value="saved">Saved</option><option value="applied">Applied</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select></div>
+    <label>Notes<textarea id="detail-notes" rows="4" maxlength="10000" placeholder="Referral, recruiter, next steps..."></textarea></label>
+    <div class="form-footer"><button class="button" type="submit">Save changes</button><p id="detail-save-status" role="status"></p><button id="remove-application" type="button" class="text-button remove-link" hidden>Remove from applications</button></div>
+  </form>
 </dialog>
-<dialog id="manual-dialog" aria-labelledby="manual-title"><button id="close-manual" class="close" aria-label="Close add application">&#215;</button><h2 id="manual-title">Add an application</h2><p class="muted">Track a job you found outside SponsorScan.</p><form id="manual-form"><label>Company<input name="company" maxlength="200" required></label><label>Job title<input name="title" maxlength="200" required></label><label>Posting URL (optional)<input name="url" type="url" maxlength="4096" placeholder="https://..."></label><label>Status<select name="status"><option value="applied">Applied</option><option value="saved">Saved</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option></select></label><label>Notes<textarea name="notes" maxlength="10000" rows="3"></textarea></label><button class="button" type="submit">Add application</button><p id="manual-save-status" role="status"></p></form></dialog>
+<dialog id="manual-dialog" aria-labelledby="manual-title"><div class="dialog-body"><button id="close-manual" type="button" class="close icon-button" aria-label="Close add application"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button><h2 id="manual-title">Add an application</h2><p class="muted">Track a job you found outside SponsorScan.</p><form id="manual-form"><label>Company<input name="company" maxlength="200" required></label><label>Job title<input name="title" maxlength="200" required></label><label>Posting URL (optional)<input name="url" type="url" maxlength="4096" placeholder="https://..."></label><label>Status<select name="status"><option value="applied">Applied</option><option value="saved">Saved</option><option value="interview">Interviewing</option><option value="offer">Offer</option><option value="rejected">Rejected</option></select></label><label>Notes<textarea name="notes" maxlength="10000" rows="3"></textarea></label><button class="button" type="submit">Add application</button><p id="manual-save-status" role="status"></p></form></div></dialog>
 <noscript><p class="noscript">JavaScript is required for this local dashboard. The existing SponsorScan CLI still works without it.</p></noscript>
 </body>
 </html>

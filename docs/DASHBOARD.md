@@ -40,10 +40,76 @@ On Windows, you can also run the virtual environment's interpreter directly:
    history, then save it or open the employer's posting.
 4. In **Applications**, record statuses and notes. **Add application** lets you
    track a role found elsewhere, even if it is not in SponsorScan's feed.
+5. Optional: open **Integrations** to set up Telegram, email, Google Sheets or a
+   schedule. Each card gives the steps and copyable terminal commands.
 
 Statuses are manual. Opening a posting does not submit an application or mark
 it as applied. There is no resume scanner or automatic application submission
 in this version. Profile fit is a weighted ranking heuristic, not an ATS score.
+
+## What each page shows
+
+### Matches
+
+- Each row shows the company logo, the role, its location and posting date,
+  your profile fit, and tags for new postings, required experience and the
+  skills you matched. **Open posting** goes straight to the employer's page.
+- **H-1B filings** is a switch in the toolbar. It shows or hides the H-1B and
+  green card columns, and the dashboard remembers your choice. The switch
+  appears once filing history is loaded, for profiles that need sponsorship.
+- Sort by most recent (the default), oldest, highest or lowest fit, or most
+  H-1B filings. Clicking the Fit, Posted or H-1B filings column header sorts
+  by that column. Clicking Fit or Posted again reverses the order.
+- The bookmark saves a role to Applications. Clicking it again unsaves it,
+  with an Undo. When a count at the top goes up, a green +1 rises from it.
+- Opening a role shows:
+  - **Profile fit**, broken into its parts, such as role match 62/62 plus
+    skills in the posting 5/42. The parts come from the same scoring as the
+    report, so they always add up to the total. Below them is a list of the
+    skills the posting asks for that your profile does not have.
+  - **Sponsorship history**: H-1B filings by year, green card (PERM) filings,
+    the share of filings for client sites and for new hires, and the DOL
+    employer name the company was matched to.
+  - **Why this job matched**, and your application status and notes.
+- After you open a posting and come back to the dashboard, it asks **Did you
+  apply?** Yes marks the role as applied. Not yet leaves it as it was.
+- A built match list is reused for 15 minutes. Fetching jobs or editing your
+  profile rebuilds it right away.
+
+### Applications
+
+Your saved and tracked roles, with search, a status filter and CSV export.
+Remove asks for a second click before it deletes a record.
+
+### Integrations
+
+One card per extra: Telegram, Gmail alerts, Google Sheets and a GitHub Actions
+schedule, then a final card that checks your profile and data and runs a
+report. Each card has
+numbered steps, buttons that open the right pages, and commands with a Copy
+button. The commands already use your profile path and CSV file names. **Show
+commands for** switches between PowerShell and macOS or Linux.
+
+Everything still runs in your own terminal. Passwords and bot tokens are typed
+into hidden prompts there, and the dashboard never sees them.
+
+### Theme
+
+The sun, moon and monitor buttons at the top right switch between light, dark
+and your system setting. The dashboard follows the system setting until you
+choose, then remembers your choice.
+
+## Company logos
+
+Logos are fetched once from each company's own site, using its `domain:` in
+`companies.yaml`, and cached in the workspace's `logos/` folder. A company
+without a usable logo keeps a colored letter tile, and its site is asked again
+after a week. A fetched file is used only if it is a real image, and logo
+requests never go to your own computer or local network.
+
+Some sites turn away scripts. For those, a company entry can give a `logo:`
+image address to use instead, or you can drop a file named `<domain>.png` (for
+example `doordash.com.png`) into the `logos/` folder.
 
 ## Existing profiles
 
@@ -105,6 +171,7 @@ The default private workspace is `.sponsorscan-dashboard/`, excluded from Git:
 | `applications.sqlite3` | Saved job snapshots, statuses, notes, and timestamps |
 | `profile.json` | Profile created by dashboard onboarding |
 | `last-update.log` | Output from the latest data update |
+| `logos/` | Cached company logos, and any you add by hand |
 
 The job catalog remains in `sponsorscan.db` (or `SPONSORSCAN_DB` / `--db`).
 To back up your workspace, stop the dashboard and copy the entire private
@@ -128,7 +195,7 @@ Other devices cannot reach it through this address.
 ## Development
 
 Edit the files in `dashboard/` and refresh the browser. No build step is needed.
-Python server changes require restarting the command. Instrument Sans is
+Python server changes require restarting the command. Hanken Grotesk is
 bundled under its SIL Open Font License in `dashboard/OFL.txt`.
 
 The dashboard reuses `sponsor_daily_report.generate_report`, which opens the

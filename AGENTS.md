@@ -9,7 +9,8 @@ experience. The playbook below is how to take them through it.
 
 A job-search tool. It joins the U.S. Department of Labor's H-1B filing data
 (LCA disclosures) with live postings from public job boards (Greenhouse, Lever,
-Ashby, Workday), then filters and ranks entry-level roles. Everything past the
+Ashby, Workday, Eightfold for Microsoft) and Amazon's job search, then filters and
+ranks entry-level roles. Everything past the
 core report is optional: a personalized profile, email alerts, a Google Sheet,
 and a GitHub Actions schedule.
 
@@ -21,6 +22,7 @@ and a GitHub Actions schedule.
 | `profile_loader.py` | Loads and validates profile JSON, and flags settings that contradict the work authorization |
 | `skill_patterns.py` | The skill vocabulary the report scores with and the wizard checks names against |
 | `scripts/send_job_email.py` | Emails new jobs through Gmail. `--check` tests the login |
+| `scripts/send_telegram.py` | Messages new jobs to Telegram. `--find-chat` prints the chat ID, `--check` tests the bot |
 | `scripts/update_google_sheet.py` | Copies both CSVs into a Google Sheet. `--check` tests access |
 | `workflows/sponsorscan.example.yml` | GitHub Actions template; copy into `.github/workflows/` |
 | `docs/` | Human guides. `REFERENCE.md` documents every flag |
@@ -102,6 +104,7 @@ commands you run, and yours are not visible to theirs. Choose one of these:
   gh secret set GOOGLE_SPREADSHEET_ID --body "<id>"
   gh secret set GMAIL_ADDRESS --body "sender@gmail.com"
   gh secret set NOTIFICATION_EMAIL --body "recipient@example.com"
+  gh secret set TELEGRAM_CHAT_ID --body "<chat id>"
   ```
 
   The App Password is set by the user, since `gh` prompts for it:
@@ -151,6 +154,24 @@ Then run the report and `send_job_email.py` without `--check` for a real
 message. It sends nothing when the new-jobs CSV has no rows, so a first test
 after a fresh `--reset-state` report is the reliable one. Tell them to check
 spam the first time.
+
+### Stage 3b: Telegram alerts (optional)
+
+Full guide: `docs/TELEGRAM_SETUP.md`. The quickest extra: no Google account
+or key file. The bot token is a secret, so the user handles it, as with the
+App Password.
+
+1. User: in Telegram, message @BotFather, send `/newbot`, pick a name and a
+   username ending in `bot`. BotFather replies with the token.
+2. User: open the new bot and press Start, since a bot cannot message first.
+3. User, in their own terminal: set `TELEGRAM_BOT_TOKEN` with `Read-Host` (or
+   `read -s`) and run `python scripts/send_telegram.py --find-chat`. It prints
+   `TELEGRAM_CHAT_ID=<number>`, which is not a secret; they can paste it back.
+4. User: set `TELEGRAM_CHAT_ID` and run `--check`, then `--test`. A message
+   should arrive.
+
+For the schedule, the user runs `gh secret set TELEGRAM_BOT_TOKEN` (it
+prompts), and you can set `TELEGRAM_CHAT_ID` with `--body`.
 
 ### Stage 4: Google Sheets (optional)
 

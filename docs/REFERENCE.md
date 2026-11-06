@@ -9,6 +9,7 @@ Setup guides for specific situations:
 - [U.S. citizens](CITIZEN_SETUP.md)
 - [Google Sheets](GOOGLE_SHEETS_SETUP.md)
 - [Email notifications](EMAIL_SETUP.md)
+- [Telegram alerts](TELEGRAM_SETUP.md)
 
 ---
 

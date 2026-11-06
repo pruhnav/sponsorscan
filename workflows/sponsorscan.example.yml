@@ -28,6 +28,7 @@ jobs:
       # integrations are configured without exposing the values to every step.
       SHEETS_ENABLED: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON != '' && secrets.GOOGLE_SPREADSHEET_ID != '' }}
       EMAIL_ENABLED: ${{ secrets.GMAIL_ADDRESS != '' && secrets.GMAIL_APP_PASSWORD != '' && secrets.NOTIFICATION_EMAIL != '' }}
+      TELEGRAM_ENABLED: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
 
     steps:
       - name: Check out repository
@@ -146,6 +147,15 @@ jobs:
           EMAIL_SUBJECT_PREFIX: SponsorScan
         run: |
           python scripts/send_job_email.py
+
+      # Skipped until both Telegram secrets exist; see docs/TELEGRAM_SETUP.md.
+      - name: Send new job matches to Telegram
+        if: env.TELEGRAM_ENABLED == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python scripts/send_telegram.py
 
       - name: Upload report artifacts
         uses: actions/upload-artifact@v4

@@ -6,14 +6,15 @@ import json
 import os
 import socket
 import sqlite3
+import struct
 from email.message import Message
 from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
 
-from local_dashboard import (ApplicationStore, Dashboard, DashboardHandler,
-                             DashboardServer, safe_url)
+from local_dashboard import (ApplicationStore, Dashboard, DashboardHandler, _public_host,
+                             DashboardServer, icon_candidates, image_kind, safe_url)
 from onboarding import build_profile, save_profile
 
 
@@ -30,7 +31,8 @@ def profile_input():
             "report_hours": 168, "minimum_score": 95}
 
 
-def request(app, path, data=None, host="127.0.0.1:8765", origin=None, token=None):
+def request(app, path, data=None, host="127.0.0.1:8765", origin=None, token=None,
+            headers=None):
     """Exercise the real handlers with streams rather than a bound socket."""
     handler = DashboardHandler.__new__(DashboardHandler)
     handler.server = SimpleNamespace(app=app, server_port=8765)
@@ -40,6 +42,8 @@ def request(app, path, data=None, host="127.0.0.1:8765", origin=None, token=None
     handler.command = "GET" if data is None else "POST"
     handler.headers = Message()
     handler.headers["Host"] = host
+    for name, value in (headers or {}).items():
+        handler.headers[name] = value
     if origin is not None:
         handler.headers["Origin"] = origin
     body = json.dumps(data).encode() if data is not None else b""
@@ -172,9 +176,16 @@ def test_dashboard_setup_guide_uses_its_database(app, profile_input, monkeypatch
         return "Instructions for this database"
 
     monkeypatch.setattr("local_dashboard.setup_guide", capture_guide)
-    assert app.setup_instructions() == {"text": "Instructions for this database"}
+    guide = app.setup_instructions()
+    assert guide["text"] == "Instructions for this database"
     assert captured["db_path"] == app.db_path
     assert captured["path"] == app.profile_path
+    # The Integrations page gets the same steps for both shells, using this database.
+    assert guide["shell"] in ("windows", "posix")
+    for shell in ("windows", "posix"):
+        sections = {section["id"]: section for section in guide["sections"][shell]}
+        assert {"telegram", "email", "sheets", "schedule", "check"} <= set(sections)
+        assert " --db " in sections["check"]["steps"][0]["commands"][0]
 
 
 def test_bootstrap_has_review_defaults_and_shared_proficiency_levels(app):
@@ -324,9 +335,59 @@ def test_partial_update_is_reported_and_success_is_published(app, tmp_path):
     staging = tmp_path / "stage.db"
     make_feed(staging, successful=1, failed=1, title="New job")
     message = app.publish_update(staging, "fetch", app.database_signature())
-    assert "1 boards failed" in message
+    assert "1 job board did not respond" in message
     with sqlite3.connect(app.db_path) as con:
         assert con.execute("SELECT title FROM jobs").fetchone()[0] == "New job"
+
+
+def test_failed_boards_are_named_by_company(app):
+    make_feed(app.db_path)
+    with sqlite3.connect(app.db_path) as con:
+        con.executemany("INSERT INTO fetch_failures VALUES (?)",
+                        [("workday/cisco/wd5/cisco_careers",), ("lever/acme",)])
+    status = app.data_status()
+    assert status["failed_boards"] == 2
+    assert status["failed_board_names"] == ["acme", "cisco"]
+
+
+def make_filings(path):
+    with sqlite3.connect(path) as con:
+        con.executescript("""
+            CREATE TABLE lca_quarters (fiscal_year INTEGER, quarter INTEGER);
+            CREATE TABLE lca_quarter_employers (fiscal_year INTEGER, quarter INTEGER,
+                employer_norm TEXT, certified INTEGER);
+            CREATE TABLE perm_quarters (fiscal_year INTEGER, quarter INTEGER);""")
+        con.executemany("INSERT INTO lca_quarters VALUES (?, ?)",
+                        [(2025, 4), (2026, 1), (2026, 2), (2025, 0)])
+        con.executemany("INSERT INTO lca_quarter_employers VALUES (?, ?, ?, ?)", [
+            (2025, 4, "acme", 3), (2026, 2, "acme", 5), (2025, 0, "acme", 9),
+            (2026, 1, "other", 7)])
+
+
+def test_filing_history_is_aligned_to_loaded_quarters(tmp_path):
+    from local_dashboard import add_filing_history
+    from sponsorscan import norm_employer
+
+    db = tmp_path / "filings.db"
+    make_filings(db)
+    name = next(display for display in ("Acme", "Acme Inc", "ACME")
+                if norm_employer(display) == "acme")
+    report = {"matches": [{"lca_employer": name}, {"lca_employer": ""}], "metadata": {}}
+    add_filing_history(report, db)
+    # Undated filings (quarter 0) appear in no bar; quarters without filings are 0.
+    assert report["metadata"]["lca_quarters"] == ["FY2025 Q4", "FY2026 Q1", "FY2026 Q2"]
+    assert report["matches"][0]["lca_by_quarter"] == [3, 0, 5]
+    assert report["matches"][1]["lca_by_quarter"] == []
+    assert report["metadata"]["perm_loaded"] is False
+
+
+def test_filing_history_tolerates_an_older_database(app):
+    make_feed(app.db_path)
+    from local_dashboard import add_filing_history
+    report = {"matches": [{"lca_employer": "Acme"}], "metadata": {}}
+    add_filing_history(report, app.db_path)
+    assert report["metadata"]["lca_quarters"] == []
+    assert report["matches"][0]["lca_by_quarter"] == []
 
 
 def test_concurrent_external_update_is_not_overwritten(app, tmp_path):
@@ -345,3 +406,159 @@ def test_task_already_running_does_not_start_another(app):
     with pytest.raises(ValueError, match="already running"):
         app.start_task("fetch")
     assert app.task == before
+
+
+# ------------------------------------------------------------- company logos
+PNG_64 = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + struct.pack(">II", 64, 64)
+          + b"\x08\x06\x00\x00\x00" + b"\x00" * 24)
+
+
+def test_image_kind_trusts_bytes_not_labels():
+    assert image_kind(PNG_64) == "png"
+    assert image_kind(PNG_64[:16] + struct.pack(">II", 16, 16) + PNG_64[24:]) is None
+    assert image_kind(b"<!doctype html><html><head></head></html>") is None
+    assert image_kind(b'{"token": "secret", "padding": "........"}') is None
+    assert image_kind(b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>') == "svg"
+    assert image_kind(b"\x00\x00\x01\x00\x01\x00" + bytes([48]) + b"\x00" * 30) == "ico"
+    assert image_kind(b"\x00\x00\x01\x00\x01\x00" + bytes([16]) + b"\x00" * 30) is None
+
+
+def test_icon_candidates_prefer_large_touch_icons():
+    html = """<link rel="icon" href="/favicon-16.png" sizes="16x16">
+        <link rel="icon" type="image/svg+xml" href="/logo.svg">
+        <link rel="apple-touch-icon" href="https://cdn.example.com/touch.png" sizes="180x180">
+        <link rel="icon" href="data:image/png;base64,AAAA">
+        <link rel="icon" href="icons/192.png" sizes="192x192">"""
+    urls = icon_candidates(html, "https://example.com/home/")
+    assert urls[:3] == ["https://cdn.example.com/touch.png",
+                        "https://example.com/home/icons/192.png", "https://example.com/logo.svg"]
+    assert urls.index("https://example.com/apple-touch-icon.png") < urls.index(
+        "https://example.com/favicon-16.png")
+    assert urls[-1] == "https://example.com/favicon.ico"
+    assert not any(url.startswith("data:") for url in urls)
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "10.0.0.5", "192.168.1.1", "169.254.1.1"])
+def test_logo_requests_never_reach_local_addresses(host):
+    assert not _public_host(host)
+
+
+@pytest.fixture
+def logo_app(tmp_path):
+    companies = tmp_path / "companies.yaml"
+    companies.write_text("companies:\n  ashby:\n"
+                         "    - {slug: acme, name: Acme Corp, domain: acme.com}\n"
+                         "    - {slug: bad, name: Bad, domain: 'not a domain'}\n"
+                         "    - {slug: plain}\n", encoding="utf-8")
+    return Dashboard(tmp_path / "jobs.db", tmp_path / "workspace", companies=companies)
+
+
+def test_logos_are_listed_only_for_valid_domains(logo_app):
+    assert logo_app.bootstrap()["logos"] == {"Acme Corp": "/logo/acme.com"}
+
+
+def test_unlisted_domain_is_never_fetched(logo_app):
+    logo_app.fetch_logo = lambda domain: pytest.fail(f"fetched {domain}")
+    assert request(logo_app, "/logo/evil.example")[0] == 404
+
+
+def test_logo_is_fetched_once_and_served_sandboxed(logo_app):
+    calls = []
+    logo_app.fetch_logo = lambda domain: calls.append(domain) or ("png", PNG_64)
+    for _ in range(2):
+        status, head, body = request(logo_app, "/logo/acme.com")
+        assert status == 200 and body == PNG_64
+    assert calls == ["acme.com"]
+    assert b"image/png" in head and b"sandbox" in head and b"nosniff" in head
+
+
+def test_missing_logo_is_not_fetched_on_every_view(logo_app):
+    calls = []
+    logo_app.fetch_logo = lambda domain: calls.append(domain)
+    assert request(logo_app, "/logo/acme.com")[0] == 404
+    assert request(logo_app, "/logo/acme.com")[0] == 404
+    assert calls == ["acme.com"]
+    # The page stops asking for it at all.
+    assert logo_app.bootstrap()["logos"] == {}
+
+
+def test_other_sites_cannot_start_logo_fetches(logo_app):
+    logo_app.fetch_logo = lambda domain: pytest.fail("fetched for another site")
+    status, _, _ = request(logo_app, "/logo/acme.com", headers={"Sec-Fetch-Site": "cross-site"})
+    assert status == 403
+
+
+def test_removing_an_application_deletes_only_that_record(app, profile_input):
+    app.save_profile(profile_input)
+    for title in ("Analyst", "Engineer"):
+        app.save_application({"manual": True, "title": title, "company": "Example", "status": "applied"})
+    first, second = app.store.list(app.owner)
+    assert app.save_application({"job_key": first["job_key"], "remove": True}) == {"ok": True}
+    assert [row["job_key"] for row in app.store.list(app.owner)] == [second["job_key"]]
+    with pytest.raises(ValueError, match="already removed"):
+        app.save_application({"job_key": first["job_key"], "remove": True})
+
+
+def test_fit_breakdown_adds_up_and_names_missing_skills(tmp_path):
+    from local_dashboard import add_fit_breakdown
+
+    db = tmp_path / "jobs.db"
+    with sqlite3.connect(db) as con:
+        con.execute("CREATE TABLE jobs (job_key TEXT, title TEXT, description TEXT)")
+        con.execute("INSERT INTO jobs VALUES ('k1', 'Software Engineer', "
+                    "'We use Python, SQL, Pandas, NLP and LLMs on Kubernetes.')")
+    profile = {"target_roles": ["Software Engineer", "Machine Learning Engineer"],
+               "skills": {"Python": 7, "Java": 5, "Pandas/NumPy": 3}}
+    report = {"matches": [{"job_key": "k1", "title": "Software Engineer"}]}
+    add_fit_breakdown(report, db, profile)
+    parts = report["matches"][0]["fit_breakdown"]
+    assert parts["role"]["name"] == "Software Engineer"
+    assert parts["role"]["max"] >= parts["role"]["points"] > 0
+    assert parts["skills"]["matched"] == [["Python", 7], ["Pandas/NumPy", 3]]
+    assert parts["skills"]["points"] == 10 and parts["skills"]["listed"] == 3
+    missing = parts["missing"]
+    assert {"SQL", "Kubernetes", "NLP", "LLMs"} <= set(missing)
+    # Neither a listed skill under another name nor a repeat of one already named.
+    assert "Pandas" not in missing and "NLP/LLMs" not in missing
+
+
+@pytest.fixture
+def configured_logo_app(tmp_path):
+    companies = tmp_path / "companies.yaml"
+    companies.write_text("companies:\n  workday:\n"
+                         "    - {slug: cisco/wd5/x, name: Cisco Systems, domain: cisco.com,\n"
+                         "       logo: 'https://images.example.org/cisco.png'}\n", encoding="utf-8")
+    return Dashboard(tmp_path / "jobs.db", tmp_path / "workspace", companies=companies)
+
+
+def test_a_configured_logo_is_fetched_instead_of_the_site(configured_logo_app):
+    # Sites behind bot protection answer 403 to anything but a browser.
+    app = configured_logo_app
+    app.fetch_logo = lambda domain: pytest.fail("asked the company's own site")
+    fetched = []
+    app.fetch_logo_url = lambda url: fetched.append(url) or ("png", PNG_64)
+    assert request(app, "/logo/cisco.com")[2] == PNG_64
+    assert fetched == ["https://images.example.org/cisco.png"]
+
+
+def test_a_dropped_in_logo_file_is_used_even_after_a_miss(configured_logo_app):
+    app = configured_logo_app
+    app.fetch_logo_url = lambda url: None
+    assert request(app, "/logo/cisco.com")[0] == 404
+    assert app.bootstrap()["logos"] == {}
+    (app.workspace / "logos" / "cisco.com.png").write_bytes(PNG_64)
+    assert app.bootstrap()["logos"] == {"Cisco Systems": "/logo/cisco.com"}
+    assert request(app, "/logo/cisco.com")[2] == PNG_64
+
+
+def test_changing_the_configured_logo_tries_again(configured_logo_app):
+    app = configured_logo_app
+    app.fetch_logo_url = lambda url: None
+    assert request(app, "/logo/cisco.com")[0] == 404
+    app.companies.write_text(app.companies.read_text(encoding="utf-8").replace("cisco.png", "cisco-2.png")
+                             + "\n", encoding="utf-8")
+    tried = []
+    app.fetch_logo_url = lambda url: tried.append(url) or ("png", PNG_64)
+    assert app.bootstrap()["logos"] == {"Cisco Systems": "/logo/cisco.com"}
+    assert request(app, "/logo/cisco.com")[0] == 200 and tried == ["https://images.example.org/cisco-2.png"]
+

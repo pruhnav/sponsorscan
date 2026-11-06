@@ -132,8 +132,9 @@ def test_non_us_locations(location):
     ("New York or London", "us"),        # a US option among several
     ("Bangalore, India; Austin, TX", "us"),
     ("Paris, TX", "us"),
-    ("San Francisco", "unclear"),        # a city with no state or country
-    ("Seattle", "unclear"),
+    ("San Francisco", "us"),             # a well-known US city, even without a state
+    ("Seattle", "us"),
+    ("Springfield", "unclear"),          # a city name the list does not know
     ("Remote", "unclear"),
     ("Hybrid", "unclear"),
     ("2 Locations", "unclear"),
@@ -145,6 +146,37 @@ def test_non_us_locations(location):
 ])
 def test_location_verdict(location, verdict):
     assert sdr.location_verdict(location) == verdict
+
+
+# Postings that reached a user's matches from these boards, before the list of
+# countries and cities was complete.
+@pytest.mark.parametrize("location", [
+    "Bratislava, Slovakia, Slovakia",
+    "São Paulo",
+    "Sao Paulo, Brazil",
+    "Bangalore",
+    "Bengaluru, Karnataka",
+    "Hyderabad",
+    "Kraków, Poland",
+    "Remote - Czechia",
+    "Mexico City",
+    "Tel Aviv-Yafo",
+    "Remote, LATAM",
+    "Ho Chi Minh City",
+])
+def test_foreign_cities_and_countries_are_not_us(location):
+    assert sdr.location_verdict(location) == "non_us"
+
+
+@pytest.mark.parametrize("location", [
+    "Vienna, VA",              # a US city named after a foreign one
+    "Athens, GA",
+    "Albuquerque, New Mexico",  # "Mexico" inside a state name
+    "Georgia",                 # the state, not the country
+    "Lebanon, NH",
+])
+def test_us_places_with_foreign_names_stay_us(location):
+    assert sdr.location_verdict(location) == "us"
 
 
 # ------------------------------------------------------------ company tier
@@ -185,6 +217,21 @@ def test_preferred_company_and_location_matching():
     assert sdr.matches_preferred_company("Striped Socks Co", ["Stripe"]) is False
     assert sdr.matches_preferred_location("Remote, California", ["california"]) is True
     assert sdr.matches_preferred_location("Austin, TX", ["california"]) is False
+
+
+@pytest.mark.parametrize("country", ["US", "USA", "U.S.A.", "United States",
+                                     "united states of america", "America"])
+def test_a_country_name_boosts_no_posting(country):
+    # Every match is in the US already; "US" must not match inside "Austin".
+    for location in ("Austin, TX", "Remote, USA", "New York, NY, United States"):
+        assert sdr.matches_preferred_location(location, [country]) is False
+    assert sdr.matches_preferred_location("Austin, TX", [country, "Austin"]) is True
+
+
+@pytest.mark.parametrize("title", ["Forward Deployed Engineer", "Forward-Deployed Software Engineer",
+                                   "Forward Deployed AI Engineer, New Grad"])
+def test_forward_deployed_titles_are_their_own_role(title):
+    assert sdr.classify_role(title)[0] == "Forward Deployed Engineer"
 
 
 # ------------------------------------------------------- work authorization
@@ -578,3 +625,26 @@ def test_green_card_filings_are_noted():
     signals = sdr.employer_signals(emp, current_fy=2026)
     assert signals["perm_certified"] == 12
     assert "sponsors green cards (12 PERM certified)" in signals["notes"]
+
+
+# Bare US cities, as boards list them. The location caution would otherwise
+# land on most rows.
+@pytest.mark.parametrize("location", [
+    "San Francisco", "New York City", "NYC", "Seattle Office", "Hybrid - San Francisco",
+    "Mountain View", "Redmond", "Austin", "Bay Area", "New York City or London",
+])
+def test_known_us_cities_without_a_state_are_us(location):
+    assert sdr.location_verdict(location) == "us"
+
+
+@pytest.mark.parametrize("location", ["Durham, England", "Cambridge, UK", "Richmond, British Columbia",
+                                      "In-Office", "Remote"])
+def test_shared_or_missing_city_names_are_not_assumed_us(location):
+    assert sdr.location_verdict(location) != "us"
+
+
+def test_every_authorization_pattern_has_its_gate_words():
+    # A pattern added without gate words would be skipped by zip(), silently.
+    for flag, patterns in sdr.AUTHORIZATION_CHECKS.items():
+        assert len(sdr.AUTHORIZATION_GATES[flag]) == len(patterns), flag
+        assert all(words for words in sdr.AUTHORIZATION_GATES[flag]), flag

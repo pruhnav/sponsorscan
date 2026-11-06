@@ -8,7 +8,8 @@ Two data sources, both of which are structurally durable:
      Labor Certification. A legal filing requirement, so it keeps coming out
      regardless of anyone's business model. Free bulk download, no key.
 
-  2. Public ATS job board APIs (Greenhouse, Lever, Ashby). Served straight from
+  2. Public ATS job board APIs (Greenhouse, Lever, Ashby, Workday, Eightfold) and
+     Amazon's own job search. Served straight from
      the employer with no aggregator in between to abandon it.
 
 Usage:
@@ -38,8 +39,9 @@ import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 import yaml
@@ -398,8 +400,9 @@ def cmd_load_lca(args):
                          "Pass one of them.")
     if prebuilt:
         by_kind, meta = _read_prebuilt(prebuilt)
+        green = f"; green card filings {meta['perm_quarters']}" if meta.get("perm_quarters") else ""
         print(f"Prebuilt table built {meta.get('built', '?')}, "
-              f"covering {meta.get('quarters', '?')}.")
+              f"covering {meta.get('quarters', '?')}{green}.")
         for kind, quarters in by_kind.items():
             _store_quarters(quarters, f"prebuilt {meta.get('built', '')}".strip(),
                             args.replace, kind)
@@ -802,6 +805,154 @@ def fetch_ashby(slug):
     return out
 
 
+# Amazon, the largest H-1B filer, runs its own job site. One search covers all
+# of Amazon (AWS, Devices, Ring...), so a companies.yaml slug names job
+# categories, as they appear in amazon.jobs URLs, instead of a board. Results
+# carry the full description and qualifications, so no detail requests.
+AMAZON_SEARCH = "https://www.amazon.jobs/en/search.json"
+AMAZON_PAGE = 100       # the API's largest page
+AMAZON_MAX_PAGES = 40   # 4,000 postings, newest first, is weeks of tech hiring
+AMAZON_DELAY = 0.3
+
+
+def _amazon_date(text):
+    """"November  6, 2026" as 2026-11-06; blank when unreadable."""
+    try:
+        return datetime.strptime(" ".join(str(text or "").split()), "%B %d, %Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def fetch_amazon(slug):
+    """US postings from amazon.jobs in the slug's categories ("all" for every one)."""
+    categories = [c.strip() for c in str(slug or "").split(",") if c.strip()]
+    if categories == ["all"]:
+        categories = []
+    params = [("base_query", ""), ("loc_query", ""), ("sort", "recent"),
+              ("result_limit", str(AMAZON_PAGE)), ("normalized_country_code[]", "USA"),
+              *(("category[]", category) for category in categories)]
+    out, seen = [], set()
+    for page in range(AMAZON_MAX_PAGES):
+        r = requests.get(AMAZON_SEARCH, params=params + [("offset", str(page * AMAZON_PAGE))],
+                         headers=UA, timeout=25)
+        r.raise_for_status()
+        jobs = r.json().get("jobs") or []
+        fresh = 0
+        for j in jobs:
+            key = str(j.get("id_icims") or j.get("id") or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            fresh += 1
+            path = str(j.get("job_path") or "")
+            sections = [html_to_text(j.get("description", "")),
+                        "Basic qualifications\n" + html_to_text(j.get("basic_qualifications", "")),
+                        "Preferred qualifications\n" + html_to_text(j.get("preferred_qualifications", ""))]
+            out.append({
+                "job_key": f"amazon:{key}", "source": "amazon", "title": j.get("title", ""),
+                "location": j.get("normalized_location") or j.get("location") or "",
+                # Only a path on Amazon's own site becomes a link.
+                "url": "https://www.amazon.jobs" + path if path.startswith("/") and not path.startswith("//") else "",
+                "posted": _amazon_date(j.get("posted_date")),
+                "description": "\n\n".join(sections),
+            })
+        if len(jobs) < AMAZON_PAGE or not fresh:  # the last page, or an API ignoring offset
+            break
+        time.sleep(AMAZON_DELAY)
+    return out
+
+
+# Eightfold runs career sites for large employers such as Microsoft. Its search
+# returns 10 postings per request and no description, and its edge refuses
+# bursts ("Please try again later", HTTP 429). So the slug narrows the search
+# (the careers URL, with `domain=` and any number of `query=`), and descriptions
+# are fetched only for titles that are not senior or level II and above, which
+# the report's defaults exclude anyway. Pacing and backoff follow what walks
+# Microsoft's board without stalling.
+EIGHTFOLD_PAGE = 10              # the API's fixed page size
+EIGHTFOLD_MAX_PAGES = 15         # per query: the 150 newest postings
+EIGHTFOLD_DELAY = 0.5
+EIGHTFOLD_BACKOFF = (2, 4, 8, 16, 32)
+_EIGHTFOLD_LEVEL = re.compile(r"\b(?:II|III|IV|V|2|3|4)\b")
+_HOSTNAME = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+class EightfoldRefused(RuntimeError):
+    """The site kept answering "slow down" after every backoff."""
+
+
+def _eightfold_get(host, method, params):
+    for wait in (*EIGHTFOLD_BACKOFF, None):
+        r = requests.get(f"https://{host}/api/pcsx/{method}", params=params,
+                         headers={**UA, "Accept": "application/json"}, timeout=25)
+        if r.status_code != 429:
+            r.raise_for_status()
+            return r.json().get("data") or {}
+        if wait is None:
+            break
+        time.sleep(wait)
+    raise EightfoldRefused(f"{host} kept asking to slow down (HTTP 429)")
+
+
+def fetch_eightfold(slug):
+    """US postings from an Eightfold career site, such as Microsoft's."""
+    parts = urlsplit(slug if "://" in slug else "https://" + slug)
+    host = (parts.hostname or "").lower()
+    if not _HOSTNAME.match(host):
+        raise ValueError(f"eightfold slug needs a careers host, such as "
+                         f"apply.careers.microsoft.com/careers?domain=microsoft.com; got {slug!r}")
+    options = parse_qs(parts.query)
+    domain = (options.get("domain") or [host])[0]
+    queries = options.get("query") or [""]
+    positions, seen = [], set()
+    try:
+        for query in queries:
+            for page in range(EIGHTFOLD_MAX_PAGES):
+                rows = _eightfold_get(host, "search", {
+                    "domain": domain, "start": page * EIGHTFOLD_PAGE, "query": query,
+                    "location": "United States", "sort_by": "timestamp"}).get("positions") or []
+                for p in rows:
+                    if p.get("id") not in seen:
+                        seen.add(p.get("id"))
+                        positions.append(p)
+                if len(rows) < EIGHTFOLD_PAGE:
+                    break
+                time.sleep(EIGHTFOLD_DELAY)
+    except EightfoldRefused:
+        if not positions:
+            raise
+    out = []
+    for p in positions:
+        title = p.get("name") or ""
+        if is_senior_title(title) or _EIGHTFOLD_LEVEL.search(title):
+            continue
+        time.sleep(EIGHTFOLD_DELAY)
+        try:
+            details = _eightfold_get(host, "position_details", {
+                "position_id": p["id"], "domain": domain, "hl": "en"})
+        except EightfoldRefused:
+            if out:
+                break  # keep what was read; the next fetch picks up the rest
+            raise
+        public = str(details.get("publicUrl") or "")
+        path = str(p.get("positionUrl") or "")
+        if urlsplit(public).scheme == "https" and (urlsplit(public).hostname or "").lower() == host:
+            url = public
+        elif path.startswith("/") and not path.startswith("//"):
+            url = f"https://{host}{path}"
+        else:
+            url = ""
+        stamp = p.get("postedTs") or p.get("creationTs")
+        out.append({
+            "job_key": f"eightfold:{host}:{p['id']}", "source": "eightfold", "title": title,
+            "location": "; ".join(p.get("locations") or []),
+            "url": url,
+            "posted": datetime.fromtimestamp(int(stamp), timezone.utc).strftime("%Y-%m-%d") if stamp else "",
+            "description": html_to_text(details.get("jobDescription", "")),
+        })
+    return out
+
+
 # Workday hosts most large employers, which are most of the DOL filers. Its list
 # endpoint gives titles and a relative "Posted 3 Days Ago", but no description,
 # and the report needs the description for its disqualifier checks. So the list
@@ -827,17 +978,24 @@ def workday_age_days(posted_on):
 
 
 def fetch_workday(slug, max_age_days=WORKDAY_MAX_AGE_DAYS):
-    """slug is 'tenant/wdN/site', e.g. 'adobe/wd5/external_experienced'."""
-    parts = slug.split("/")
+    """slug is 'tenant/wdN/site', e.g. 'adobe/wd5/external_experienced'.
+
+    A big board can be narrowed to the board's own categories by adding them
+    as a query: 'walmart/wd504/WalmartExternal?jobFamilyGroup=<id>', with the
+    ids the board's filters use. Repeat a name for several values.
+    """
+    base, _, query = slug.partition("?")
+    parts = base.split("/")
     if len(parts) != 3:
         raise ValueError(f"workday slug must be tenant/wdN/site, got '{slug}'")
     tenant, wd, site = parts
+    facets = parse_qs(query)
     api = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}"
     headers = {**UA, "Accept": "application/json"}
 
     def list_page(offset):
         r = requests.post(f"{api}/jobs", headers=headers, timeout=25, json={
-            "appliedFacets": {}, "limit": WORKDAY_PAGE, "offset": offset,
+            "appliedFacets": facets, "limit": WORKDAY_PAGE, "offset": offset,
             "searchText": ""})
         r.raise_for_status()
         time.sleep(WORKDAY_DETAIL_DELAY)
@@ -895,6 +1053,7 @@ def fetch_workday(slug, max_age_days=WORKDAY_MAX_AGE_DAYS):
 
 
 FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby,
+            "amazon": fetch_amazon, "eightfold": fetch_eightfold,
             "workday": fetch_workday}
 
 

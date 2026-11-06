@@ -21,6 +21,7 @@ import csv
 import json
 import os
 import re
+import unicodedata
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -44,6 +45,11 @@ DEFAULT_STATE = Path(".sponsorscan_state.json")
 # the built-in default always agree on what a family means.
 
 ROLE_DEFINITIONS = [
+    # First, because its titles often contain another family's name
+    # ("Forward Deployed AI Engineer"), and its pattern matches nothing else.
+    ("Forward Deployed Engineer",
+     [r"\bforward[ -]deployed (?:software |ai |ml |product )?engineer\b",
+      r"\bforward[ -]deployed engineering\b", r"\bfde\b"], 49),
     ("Machine Learning Engineer",
      [r"\bmachine learning engineer\b", r"\bml engineer\b",
       r"\bml platform engineer\b"], 64),
@@ -455,6 +461,21 @@ AUTHORIZATION_CHECKS = {
     "reject_clearance_roles": CLEARANCE_RES,
 }
 
+# Words each pattern above cannot match without, in the same order. Looking for
+# a plain word costs a sliver of a regex scan, and most postings never mention
+# sponsorship, citizenship or clearance, so a pattern whose words are all absent
+# is skipped. Every match contains one of its words, so no result changes.
+# A pattern added above needs its words here; a test checks the counts line up.
+AUTHORIZATION_GATES = {
+    "reject_no_future_sponsorship": [("sponsor",), ("sponsorship",), ("sponsorship",), ("future",)],
+    "reject_opt_excluded": [("opt", "cpt"), ("opt", "cpt")],
+    "reject_permanent_authorization_required": [("work authorization",),
+                                                ("permanent resident", "green card holder")],
+    "reject_citizenship_required": [("citizen", "person", "national"), ("citizenship",),
+                                    ("only",), ("only",)],
+    "reject_clearance_roles": [("security clearance",), ("itar",), ("export",)],
+}
+
 
 # How each authorization rule is named in the dropped-jobs CSV.
 AUTHORIZATION_LABELS = {
@@ -483,6 +504,7 @@ def authorization_conflict(blob, profile):
                 return f"work authorization: {_quoted(match)}"
         return None
 
+    lowered = blob.lower()
     for flag, patterns in AUTHORIZATION_CHECKS.items():
         if not profile.get(flag, True):
             continue
@@ -490,7 +512,9 @@ def authorization_conflict(blob, profile):
         # whatever an older citizen profile's defaults say.
         if flag == "reject_no_future_sponsorship" and not needs_sponsorship(profile):
             continue
-        for pattern in patterns:
+        for pattern, words in zip(patterns, AUTHORIZATION_GATES[flag]):
+            if not any(word in lowered for word in words):
+                continue
             match = pattern.search(blob)
             if match:
                 return f"{AUTHORIZATION_LABELS[flag]}: {_quoted(match)}"
@@ -562,9 +586,22 @@ def matches_preferred_company(company, preferred):
     )
 
 
+# A country name means "anywhere in the US", which every match already is
+# (postings elsewhere are filtered out), so it boosts nothing. Matched as text,
+# "USA" would boost only postings that spell the country out, and "US" would
+# boost every Austin and Houston job.
+US_COUNTRY_NAMES = {"us", "usa", "unitedstates", "unitedstatesofamerica", "america",
+                    "theus", "theusa", "theunitedstates", "anywhereintheus"}
+
+
+def is_country_location(value):
+    return re.sub(r"[\s.]", "", str(value or "").lower()) in US_COUNTRY_NAMES
+
+
 def matches_preferred_location(location, preferred):
     loc = (location or "").lower()
-    return any(str(p).strip().lower() in loc for p in (preferred or []) if str(p).strip())
+    return any(str(p).strip().lower() in loc for p in (preferred or [])
+               if str(p).strip() and not is_country_location(p))
 
 
 # ------------------------------------------------------------ US location
@@ -590,18 +627,114 @@ US_STATE_NAMES = {
     "district of columbia",
 }
 
-NON_US = {
-    "canada", "india", "united kingdom", "ireland", "germany", "france",
-    "spain", "italy", "netherlands", "belgium", "sweden", "norway", "denmark",
-    "finland", "poland", "romania", "portugal", "switzerland", "austria",
-    "australia", "new zealand", "singapore", "japan", "china", "taiwan",
-    "south korea", "korea", "israel", "brazil", "mexico", "argentina",
-    "colombia", "chile", "philippines", "indonesia", "malaysia", "thailand",
-    "vietnam", "hong kong", "uae", "dubai", "berlin", "toronto", "vancouver",
-    "london", "dublin", "paris", "amsterdam", "munich",
-    # Regions that are not the US but read as "remote-friendly".
-    "europe", "emea", "apac", "latam", "worldwide", "anywhere in the world",
+# Countries other than the US. Names that are also US states or territories
+# (Georgia, Jersey, Samoa) are left out: the US checks run first, and a bare
+# "Georgia" is far likelier to mean the state.
+NON_US_COUNTRIES = {
+    "afghanistan", "albania", "algeria", "andorra", "angola", "argentina",
+    "armenia", "australia", "austria", "azerbaijan", "bahamas", "bahrain",
+    "bangladesh", "barbados", "belarus", "belgium", "belize", "benin", "bhutan",
+    "bolivia", "bosnia", "botswana", "brazil", "brunei", "bulgaria",
+    "burkina faso", "burundi", "cambodia", "cameroon", "canada", "cape verde",
+    "chad", "chile", "china", "colombia", "congo", "costa rica", "croatia",
+    "cuba", "cyprus", "czechia", "czech republic", "denmark", "djibouti",
+    "dominican republic", "ecuador", "egypt", "el salvador", "estonia",
+    "eswatini", "ethiopia", "fiji", "finland", "france", "gabon", "gambia",
+    "germany", "ghana", "greece", "guatemala", "guinea", "guyana", "haiti",
+    "honduras", "hungary", "iceland", "india", "indonesia", "iran", "iraq",
+    "ireland", "israel", "italy", "ivory coast", "jamaica", "japan", "jordan",
+    "kazakhstan", "kenya", "kosovo", "kuwait", "kyrgyzstan", "laos", "latvia",
+    "lebanon", "lesotho", "liberia", "libya", "liechtenstein", "lithuania",
+    "luxembourg", "madagascar", "malawi", "malaysia", "maldives", "mali",
+    "malta", "mauritania", "mauritius", "mexico", "moldova", "monaco",
+    "mongolia", "montenegro", "morocco", "mozambique", "myanmar", "namibia",
+    "nepal", "netherlands", "new zealand", "nicaragua", "niger", "nigeria",
+    "north macedonia", "macedonia", "norway", "oman", "pakistan", "panama",
+    "papua new guinea", "paraguay", "peru", "philippines", "poland",
+    "portugal", "qatar", "romania", "russia", "rwanda", "saudi arabia",
+    "senegal", "serbia", "seychelles", "sierra leone", "singapore",
+    "slovakia", "slovenia", "somalia", "south africa", "south korea", "korea",
+    "spain", "sri lanka", "sudan", "suriname", "sweden", "switzerland",
+    "syria", "taiwan", "tajikistan", "tanzania", "thailand", "togo",
+    "trinidad", "tunisia", "turkey", "turkiye", "turkmenistan", "uganda",
+    "ukraine", "uae", "united arab emirates", "united kingdom", "uk", "u.k.",
+    "england", "scotland", "wales", "northern ireland", "great britain",
+    "britain", "uruguay", "uzbekistan", "venezuela", "vietnam", "viet nam",
+    "yemen", "zambia", "zimbabwe", "hong kong", "macau",
 }
+
+# Cities that job boards list without a country. A name shared with a common
+# bare US place (Birmingham, Cambridge, Melbourne, Warsaw, Moscow, Lima) is left
+# out, so those stay "unclear" rather than drop a US job; the country name
+# still catches "Warsaw, Poland".
+NON_US_CITIES = {
+    "toronto", "vancouver", "montreal", "ottawa", "calgary", "edmonton",
+    "winnipeg", "quebec city", "halifax",
+    "mexico city", "guadalajara", "monterrey", "sao paulo", "rio de janeiro",
+    "belo horizonte", "curitiba", "porto alegre", "florianopolis", "recife",
+    "bogota", "medellin", "buenos aires", "santiago", "montevideo", "quito",
+    "london", "edinburgh", "glasgow", "dublin", "belfast", "paris", "lyon",
+    "berlin", "munich", "hamburg", "frankfurt", "cologne", "stuttgart",
+    "amsterdam", "rotterdam", "the hague", "eindhoven", "brussels", "antwerp",
+    "zurich", "geneva", "lausanne", "basel", "stockholm", "gothenburg",
+    "copenhagen", "oslo", "helsinki", "krakow", "wroclaw", "gdansk",
+    "prague", "brno", "budapest", "bucharest", "cluj", "sofia", "bratislava",
+    "lisbon", "porto", "madrid", "barcelona", "milan", "turin", "athens",
+    "istanbul", "ankara", "kyiv", "kiev", "lviv", "tallinn", "riga", "vilnius",
+    "belgrade", "zagreb", "ljubljana", "luxembourg city",
+    "tel aviv", "tel aviv-yafo", "herzliya", "haifa", "jerusalem", "dubai",
+    "abu dhabi", "riyadh", "doha", "cairo", "lagos", "nairobi", "cape town",
+    "johannesburg", "casablanca",
+    "bangalore", "bengaluru", "hyderabad", "pune", "chennai", "mumbai",
+    "delhi", "new delhi", "gurgaon", "gurugram", "noida", "kolkata",
+    "ahmedabad", "kochi", "trivandrum", "chandigarh", "jaipur", "karachi",
+    "lahore", "islamabad", "dhaka", "colombo",
+    "singapore", "kuala lumpur", "penang", "jakarta", "manila", "makati",
+    "cebu", "bangkok", "ho chi minh city", "hanoi", "da nang",
+    "tokyo", "osaka", "kyoto", "seoul", "busan", "beijing", "shanghai",
+    "shenzhen", "guangzhou", "hangzhou", "chengdu", "taipei", "hsinchu",
+    "sydney", "brisbane", "perth", "adelaide", "canberra", "auckland",
+    "wellington",
+}
+
+# Regions that are not the US but read as "remote-friendly".
+NON_US_REGIONS = {
+    "europe", "emea", "apac", "latam", "asia", "africa", "middle east",
+    "oceania", "south america", "latin america", "central america",
+    "caribbean", "nordics", "dach", "benelux", "anz", "eu",
+    "worldwide", "anywhere in the world",
+}
+
+NON_US = NON_US_COUNTRIES | NON_US_CITIES | NON_US_REGIONS
+
+# US cities job boards list without a state ("San Francisco", "Seattle
+# Office"). Names shared with a well-known place abroad (Cambridge, Durham,
+# Richmond, Birmingham, London, Paris) are left out, so "Durham, England" is not
+# read as North Carolina.
+US_CITIES = {
+    "san francisco", "south san francisco", "bay area", "sf bay area", "silicon valley",
+    "san jose", "mountain view", "palo alto", "menlo park", "sunnyvale", "cupertino",
+    "santa clara", "redwood city", "san mateo", "foster city", "burlingame", "oakland",
+    "berkeley", "emeryville", "fremont", "milpitas", "los gatos", "san bruno",
+    "los angeles", "santa monica", "culver city", "playa vista", "irvine", "san diego",
+    "pasadena", "burbank", "sacramento",
+    "seattle", "redmond", "bellevue", "kirkland", "bothell", "tacoma",
+    "portland", "hillsboro", "beaverton",
+    "new york city", "nyc", "manhattan", "brooklyn", "jersey city", "hoboken",
+    "boston", "somerville", "waltham", "burlington", "needham",
+    "austin", "dallas", "houston", "san antonio", "plano", "irving", "frisco",
+    "chicago", "evanston", "denver", "boulder", "atlanta", "alpharetta",
+    "miami", "tampa", "orlando", "raleigh", "chapel hill", "research triangle",
+    "charlotte", "nashville", "pittsburgh", "philadelphia", "baltimore",
+    "arlington", "reston", "herndon", "mclean", "tysons", "chantilly", "bethesda",
+    "rockville", "minneapolis", "st. paul", "saint paul", "detroit", "ann arbor",
+    "columbus", "cincinnati", "cleveland", "indianapolis", "st. louis", "saint louis",
+    "kansas city", "omaha", "salt lake city", "lehi", "phoenix", "scottsdale",
+    "tempe", "chandler", "las vegas", "albuquerque", "madison", "milwaukee",
+    "bentonville", "louisville", "new orleans", "honolulu", "anchorage",
+    "washington dc", "washington, dc", "washington d.c.",
+}
+US_CITY_RE = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, US_CITIES), key=len, reverse=True)) + r")\b")
 # Whole words only, so "india" does not match "Indiana" or "Indianapolis".
 NON_US_RE = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, NON_US))) + r")\b")
 
@@ -631,23 +764,33 @@ def _segment_is_us(segment):
     return bool(tail and tail.group(1) in US_STATE_CODES)
 
 
+def _plain(text):
+    """Lowercase without accents, so "São Paulo" and "Kraków" match their list
+    entries the way boards spell them either way."""
+    decomposed = unicodedata.normalize("NFKD", str(text or "").strip().lower())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
 def location_verdict(location):
     """"us", "non_us" or "unclear" for a posting's location.
 
     A location listing several places is in the US when any of them is: "New
     York or London" is a job you can take in New York. It is outside the US
     only when it names somewhere else and nowhere in the US. Everything else is
-    unclear: a bare city ("San Francisco"), "Remote", "Hybrid", "2 Locations".
+    unclear: a city it does not know, "Remote", "Hybrid", "2 Locations".
     Those are kept and flagged rather than dropped, because a wrong drop costs a
     job the user never sees, and a wrong keep costs a glance.
     """
-    loc = (location or "").strip().lower()
+    loc = _plain(location)
     if not loc:
         return "unclear"
     if any(term in loc for term in US_EXPLICIT):
         return "us"
     segments = [s.strip().rstrip(".") for s in _LOCATION_SPLIT.split(loc)]
     if any(_segment_is_us(s) for s in segments if s):
+        return "us"
+    # Before the foreign check, so "New York City or London" is a US option.
+    if US_CITY_RE.search(loc):
         return "us"
     if NON_US_RE.search(loc):
         return "non_us"

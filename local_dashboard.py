@@ -2,6 +2,8 @@
 
 SPONSORSCAN_DB selects the existing job database unless --db is supplied.
 Private profile and application data live in --workspace, never in static assets.
+Company logos are fetched from each company's own site (its `domain:` in
+companies.yaml) on first view and cached in the workspace's logos/ folder.
 This server intentionally binds only to 127.0.0.1. It is not a public hosting API.
 """
 
@@ -9,13 +11,16 @@ from __future__ import annotations
 
 import copy
 import hmac
+import ipaddress
 import json
 import math
 import mimetypes
 import os
+import re
 import secrets
 import socket
 import sqlite3
+import struct
 import subprocess
 import sys
 import threading
@@ -24,12 +29,13 @@ import uuid
 import webbrowser
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from onboarding import (SKILL_WEIGHTS, build_profile, known_skill_names,
-                        setup_guide, slugify, unknown_skills)
+                        setup_guide, setup_sections, slugify, unknown_skills)
 from profile_loader import (DEFAULT_PROFILE, VALID_WORK_AUTHORIZATION, ProfileError,
                             authorization_warnings, load_profile, validate_profile)
 
@@ -108,6 +114,11 @@ class ApplicationStore:
                         (owner, job["job_key"], snapshot, status, notes, created, stamp,
                          applied))
 
+    def delete(self, owner, job_key):
+        with self.connect() as con:
+            return con.execute("DELETE FROM applications WHERE owner=? AND job_key=?",
+                               (owner, job_key)).rowcount > 0
+
 
 def bounded_int(data, key, default, low, high, existing=None):
     value = data.get(key, default)
@@ -124,6 +135,284 @@ def text_list(value, label):
            for item in value):
         raise ValueError(f"Every {label} entry must be text, 1 to 150 characters.")
     return list(dict.fromkeys(item.strip() for item in value))
+
+
+# ------------------------------------------------------------- company logos
+LOGO_TYPES = {"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif",
+              "webp": "image/webp", "ico": "image/x-icon", "svg": "image/svg+xml"}
+LOGO_MAX_BYTES = 512 * 1024
+LOGO_RETRY_SECONDS = 7 * 24 * 3600  # a site without a usable icon is asked again weekly
+LOGO_AGENT = "Mozilla/5.0 (compatible; SponsorScan dashboard)"
+DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def image_kind(data):
+    """The type of a usable logo, judged from its bytes and never its label.
+
+    Rasters must be at least 32 pixels, so a 16-pixel favicon is not stretched
+    into a blur; the tile keeps its letter instead.
+    """
+    if not data or len(data) < 24 or len(data) > LOGO_MAX_BYTES:
+        return None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        width, height = struct.unpack(">II", data[16:24])
+        return "png" if min(width, height) >= 32 else None
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:4] == b"\x00\x00\x01\x00":
+        count = struct.unpack("<H", data[4:6])[0]
+        # Each 16-byte directory entry starts with the width; 0 means 256.
+        widths = [data[6 + 16 * i] or 256 for i in range(min(count, 32)) if 6 + 16 * i < len(data)]
+        return "ico" if widths and max(widths) >= 32 else None
+    head = data[:2048].lstrip().lower()
+    if head.startswith((b"<svg", b"<?xml")) and b"<svg" in head:
+        return "svg"
+    return None
+
+
+class _IconLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "link":
+            return
+        attrs = {key.lower(): value or "" for key, value in attrs}
+        rel = attrs.get("rel", "").lower().split()
+        if attrs.get("href") and any(r == "icon" or r.startswith("apple-touch-icon") for r in rel):
+            self.links.append((rel, attrs["href"].strip(), attrs.get("sizes", ""),
+                               attrs.get("type", "").lower()))
+
+
+def icon_candidates(html, base_url):
+    """Icon URLs for a home page, best first.
+
+    Touch icons are large, square and opaque, so they come first; then large
+    declared icons, SVG, the conventional /apple-touch-icon.png, any other
+    declared icon, and /favicon.ico last.
+    """
+    parser = _IconLinks()
+    parser.feed(html or "")
+    root = "{0.scheme}://{0.netloc}".format(urlsplit(base_url))
+    ranked = [((3, 0), root + "/apple-touch-icon.png"), ((5, 0), root + "/favicon.ico")]
+    for rel, href, sizes, kind in parser.links:
+        url = urljoin(base_url, href)
+        if urlsplit(url).scheme not in ("http", "https"):
+            continue  # inline data: icons and other schemes
+        size = max((int(n) for n in re.findall(r"(\d+)x\d+", sizes)), default=0)
+        svg = kind == "image/svg+xml" or urlsplit(url).path.lower().endswith(".svg")
+        if any(r.startswith("apple-touch-icon") for r in rel):
+            rank = (0, -size)
+        elif size >= 64 and not svg:
+            rank = (1, -size)
+        elif svg:
+            rank = (2, 0)
+        else:
+            rank = (4, -size)
+        ranked.append((rank, url))
+    ranked.sort(key=lambda item: item[0])
+    return list(dict.fromkeys(url for _, url in ranked))
+
+
+def _public_host(host):
+    """Whether every address a host resolves to is on the public internet."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    try:
+        return bool(infos) and all(
+            ipaddress.ip_address(info[4][0].split("%")[0]).is_global for info in infos)
+    except ValueError:
+        return False
+
+
+def fetch_public(url, limit, deadline, truncate=False):
+    """GET a public http(s) URL as (bytes, final URL), or (None, url).
+
+    Redirects are followed by hand, at most four, so none can lead the request
+    to this computer or the local network. A body over `limit` bytes is refused,
+    or cut short when `truncate` is set (a home page's icons are near its top).
+    """
+    import requests
+
+    for _ in range(5):
+        parts = urlsplit(url)
+        remaining = deadline - time.monotonic()
+        if (remaining <= 0 or parts.scheme not in ("http", "https") or not parts.hostname
+                or not _public_host(parts.hostname)):
+            return None, url
+        try:
+            with requests.get(url, headers={"User-Agent": LOGO_AGENT}, stream=True,
+                              timeout=min(6.0, max(1.0, remaining)),
+                              allow_redirects=False) as response:
+                if response.is_redirect and response.headers.get("Location"):
+                    url = urljoin(url, response.headers["Location"])
+                    continue
+                if response.status_code != 200:
+                    return None, url
+                data = b""
+                for chunk in response.iter_content(16384):
+                    data += chunk
+                    if len(data) > limit:
+                        if not truncate:
+                            return None, url
+                        return data[:limit], url
+                return data, url
+        except requests.RequestException:
+            return None, url
+    return None, url
+
+
+def fetch_logo_url(url, budget=15.0):
+    """(kind, bytes) of the image at a configured logo address, or None."""
+    data, _ = fetch_public(url, LOGO_MAX_BYTES, time.monotonic() + budget)
+    kind = image_kind(data)
+    return (kind, data) if kind else None
+
+
+def fetch_logo(domain, budget=15.0):
+    """(kind, bytes) of a company's icon from its own site, or None."""
+    deadline = time.monotonic() + budget
+    home, base = fetch_public(f"https://{domain}/", 1024 * 1024, deadline, truncate=True)
+    html = home.decode("utf-8", "replace") if home else ""
+    for url in icon_candidates(html, base if home else f"https://{domain}/")[:8]:
+        if time.monotonic() >= deadline:
+            break
+        data, _ = fetch_public(url, LOGO_MAX_BYTES, deadline)
+        kind = image_kind(data)
+        if kind:
+            return kind, data
+    return None
+
+
+_SKILL_VOCABULARY = None
+
+
+def add_fit_breakdown(report, db_path, profile):
+    """Explain each match's profile fit in the parts the report scored it with.
+
+    Profile fit is the role's base score plus points for each profile skill
+    the posting mentions, capped at 100. This reuses those same functions, so
+    the parts add up to the score shown. `missing` lists vocabulary skills the
+    posting mentions that the profile does not list.
+    """
+    global _SKILL_VOCABULARY
+    import re as _re
+
+    from skill_patterns import SKILL_PATTERNS
+    from sponsor_daily_report import (MAX_SKILL_POINTS, build_resume_skills,
+                                      build_target_roles, classify_role, score_skills)
+
+    matches = report.get("matches", [])
+    if not matches:
+        return
+    if _SKILL_VOCABULARY is None:
+        _SKILL_VOCABULARY = [(name, [_re.compile(p, _re.I) for p in patterns])
+                             for name, patterns in SKILL_PATTERNS.items()]
+    roles, skills = build_target_roles(profile), build_resume_skills(profile)
+    role_max = max((score for _, _, score in roles), default=0)
+    weights = {name: value for name, _, value in skills}
+
+    def parts(name):  # "NLP/LLMs" covers "NLP" and "LLMs"
+        return {name.lower(), *(part.strip().lower() for part in name.split("/"))}
+
+    own = set().union(*(parts(name) for name in weights)) if weights else set()
+    texts = {}
+    keys = [job["job_key"] for job in matches if job.get("job_key")]
+    try:
+        with closing(sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro",
+                                     uri=True)) as con:
+            for start in range(0, len(keys), 500):
+                chunk = keys[start:start + 500]
+                for key, title, description in con.execute(
+                        "SELECT job_key, title, description FROM jobs WHERE job_key IN ({})"
+                        .format(",".join("?" * len(chunk))), chunk):
+                    texts[key] = (title or "", description or "")
+    except sqlite3.OperationalError:
+        pass  # without descriptions, the parts still come from the title
+    for job in matches:
+        title, description = texts.get(job.get("job_key"), (job.get("title") or "", ""))
+        family, base = classify_role(title, roles)
+        matched, points = score_skills(title, description, skills)
+        text = f"{title}\n{description}"
+        asked = [name for name, patterns in _SKILL_VOCABULARY
+                 if not parts(name) & own and any(p.search(text) for p in patterns)]
+        # A combined name repeats a skill already listed on its own.
+        named = {name.lower() for name in asked}
+        asked = [name for name in asked if "/" not in name or not (parts(name) - {name.lower()}) & named]
+        job["fit_breakdown"] = {
+            "role": {"name": family or job.get("role_family", ""), "points": base, "max": role_max},
+            "skills": {"points": points, "max": MAX_SKILL_POINTS, "listed": len(weights),
+                       "matched": [[name, weights.get(name, 0)] for name in matched]},
+            "missing": asked[:10], "missing_total": len(asked),
+        }
+
+
+FILING_QUARTERS = 8  # bars in each employer's chart: two years of quarters
+
+
+def add_filing_history(report, db_path):
+    """Add each matched employer's certified H-1B filings per fiscal quarter.
+
+    Report rows name the matched employer (`lca_employer`) but not its key, and
+    the CSV writer rejects extra fields, so the dashboard adds the series here.
+    `metadata.lca_quarters` labels the quarters every series shares, oldest
+    first. `metadata.perm_loaded` tells a real zero from green card data that
+    was never loaded, which the employers table cannot.
+    """
+    from sponsorscan import norm_employer
+
+    matches = report.get("matches", [])
+    metadata = report.setdefault("metadata", {})
+    metadata["lca_quarters"], metadata["perm_loaded"] = [], False
+    keys = {}
+    for job in matches:
+        job["lca_by_quarter"] = []
+        if job.get("lca_employer"):
+            keys[id(job)] = norm_employer(job["lca_employer"])
+    try:
+        with closing(sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro",
+                                     uri=True)) as con:
+            try:
+                metadata["perm_loaded"] = bool(
+                    con.execute("SELECT COUNT(*) FROM perm_quarters").fetchone()[0])
+            except sqlite3.OperationalError:
+                pass  # a database written before green card data existed
+            # Quarter 0 holds filings without a decision date; no bar shows them.
+            quarters = [tuple(row) for row in con.execute(
+                "SELECT fiscal_year, quarter FROM lca_quarters WHERE quarter > 0 "
+                "ORDER BY fiscal_year DESC, quarter DESC LIMIT ?", (FILING_QUARTERS,))][::-1]
+            if not quarters:
+                return
+            years = sorted({year for year, _ in quarters})
+            numbers = sorted({quarter for _, quarter in quarters})
+            names = sorted(set(keys.values()))
+            counts = {}
+            for start in range(0, len(names), 500):
+                chunk = names[start:start + 500]
+                # Leading with the primary key's year and quarter lets SQLite
+                # look rows up instead of scanning every employer.
+                query = ("SELECT employer_norm, fiscal_year, quarter, SUM(certified) "
+                         "FROM lca_quarter_employers WHERE fiscal_year IN ({}) "
+                         "AND quarter IN ({}) AND employer_norm IN ({}) GROUP BY 1, 2, 3").format(
+                             ",".join("?" * len(years)), ",".join("?" * len(numbers)),
+                             ",".join("?" * len(chunk)))
+                for name, year, quarter, certified in con.execute(
+                        query, [*years, *numbers, *chunk]):
+                    counts[(name, year, quarter)] = certified or 0
+    except sqlite3.OperationalError:
+        return  # a database loaded before filings were stored per quarter
+    metadata["lca_quarters"] = [f"FY{year} Q{quarter}" for year, quarter in quarters]
+    for job in matches:
+        if id(job) in keys:
+            job["lca_by_quarter"] = [counts.get((keys[id(job)], year, quarter), 0)
+                                     for year, quarter in quarters]
 
 
 class Dashboard:
@@ -144,8 +433,95 @@ class Dashboard:
         self.task = {"running": False, "message": "", "error": False}
         self.process = None
         self.closing = False
+        self.fetch_logo = fetch_logo  # replaced in tests, which never touch the network
+        self.fetch_logo_url = fetch_logo_url
+        self.logo_locks = {}
+        self._domains, self._domains_signature = {}, None
+        self._logo_sources = {}
         if profile_path:
             load_profile(self.profile_path)
+
+    def company_domains(self):
+        """Company name (as reports show it) to web domain, from companies.yaml."""
+        try:
+            stat = self.companies.stat()
+        except OSError:
+            return {}
+        signature = (stat.st_mtime_ns, stat.st_size)
+        if self._domains_signature != signature:
+            import yaml
+
+            domains, sources = {}, {}
+            try:
+                config = yaml.safe_load(self.companies.read_text(encoding="utf-8")) or {}
+                for entries in (config.get("companies") or {}).values():
+                    for entry in entries or []:
+                        if not isinstance(entry, dict):
+                            continue
+                        domain = str(entry.get("domain") or "").strip().lower()
+                        name = entry.get("name") or entry.get("slug")
+                        if name and DOMAIN_RE.match(domain):
+                            domains[str(name)] = domain
+                            # `logo:` is for sites that turn away anything but a
+                            # browser; an https image address replaces the lookup.
+                            logo = str(entry.get("logo") or "").strip()
+                            if logo.startswith("https://") and len(logo) <= 2048:
+                                sources[domain] = logo
+            except (OSError, AttributeError, yaml.YAMLError):
+                domains, sources = {}, {}  # a broken file means letter tiles, not a broken dashboard
+            self._domains, self._logo_sources = domains, sources
+            self._domains_signature = signature
+        return self._domains
+
+    def _logo_state(self, domain):
+        """(cached file or None, whether a recent miss means do not ask again).
+
+        A miss records where it looked, so changing the `logo:` address tries
+        again at once instead of waiting out the week.
+        """
+        folder = self.workspace / "logos"
+        for kind in LOGO_TYPES:
+            cached = folder / f"{domain}.{kind}"
+            if cached.exists():
+                return cached, False
+        marker = folder / f"{domain}.none"
+        source = self._logo_sources.get(domain, "site")
+        try:
+            recent = time.time() - marker.stat().st_mtime < LOGO_RETRY_SECONDS
+            same = marker.read_text(encoding="utf-8").split("\n")[1:2] == [source]
+        except OSError:
+            return None, False
+        return None, recent and same
+
+    def logo(self, domain):
+        """(content type, bytes) of a company's logo, fetched once, or None.
+
+        Only domains listed in companies.yaml are fetched, so a crafted URL
+        cannot make this server request an arbitrary host.
+        """
+        if domain not in set(self.company_domains().values()):
+            return None
+        folder = self.workspace / "logos"
+        folder.mkdir(exist_ok=True)
+        with self.lock:
+            lock = self.logo_locks.setdefault(domain, threading.Lock())
+        with lock:  # rows for the same company wait for one fetch
+            # A file dropped into logos/ by hand counts like a fetched one.
+            cached, skip = self._logo_state(domain)
+            if cached:
+                return LOGO_TYPES[cached.suffix[1:]], cached.read_bytes()
+            if skip:
+                return None
+            source = self._logo_sources.get(domain)
+            found = self.fetch_logo_url(source) if source else self.fetch_logo(domain)
+            marker = folder / f"{domain}.none"
+            if not found:
+                marker.write_text(f"{now_iso()}\n{source or 'site'}\n", encoding="utf-8")
+                return None
+            kind, data = found
+            (folder / f"{domain}.{kind}").write_bytes(data)
+            marker.unlink(missing_ok=True)
+            return LOGO_TYPES[kind], data
 
     def profile(self):
         return load_profile(self.profile_path) if self.profile_path.exists() else None
@@ -227,12 +603,20 @@ class Dashboard:
         profile = self.profile()
         if profile is None:
             raise ValueError("Create and save your profile before opening setup instructions.")
-        return {"text": setup_guide(profile, self.profile_path, windows=os.name == "nt",
-                                   db_path=self.db_path)}
+        windows = os.name == "nt"
+        # Both shells, so the page can switch without a round trip; the default
+        # is this computer's own.
+        return {"text": setup_guide(profile, self.profile_path, windows=windows,
+                                   db_path=self.db_path),
+                "shell": "windows" if windows else "posix",
+                "sections": {shell: setup_sections(profile, self.profile_path,
+                                                   windows=shell == "windows",
+                                                   db_path=self.db_path)
+                             for shell in ("windows", "posix")}}
 
     def data_status(self):
-        result = {"jobs": 0, "employers": 0, "last_fetched": None,
-                  "failed_boards": 0, "error": None}
+        result = {"jobs": 0, "employers": 0, "companies": 0, "last_fetched": None,
+                  "failed_boards": 0, "failed_board_names": [], "error": None}
         if not self.db_path.exists():
             return result
         try:
@@ -244,8 +628,17 @@ class Dashboard:
                     except sqlite3.OperationalError:
                         pass
                 try:
-                    result["last_fetched"] = con.execute(
-                        "SELECT MAX(fetched_at) FROM fetched_companies").fetchone()[0]
+                    result["last_fetched"], result["companies"] = con.execute(
+                        "SELECT MAX(fetched_at), COUNT(DISTINCT company_norm) "
+                        "FROM fetched_companies").fetchone()
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    # Boards are stored as "workday/cisco/wd5/site"; the second
+                    # part names the company, which is what the user recognizes.
+                    result["failed_board_names"] = sorted({
+                        (board.split("/") + [board])[1] for (board,) in
+                        con.execute("SELECT board FROM fetch_failures LIMIT 50")})
                 except sqlite3.OperationalError:
                     pass
         except sqlite3.Error:
@@ -269,7 +662,18 @@ class Dashboard:
                                      if key.startswith("reject_") or key in (
                                          "max_required_experience", "report_hours", "minimum_score")},
                 "skills": list(known_skill_names()), "data": self.data_status(),
-                "task": dict(self.task), "statuses": list(STATUSES)}
+                "task": dict(self.task), "statuses": list(STATUSES),
+                "logos": self.logo_urls()}
+
+    def logo_urls(self):
+        """Company name to logo URL, leaving out sites already known to have none,
+        so the page does not ask for them on every load."""
+        urls = {}
+        for name, domain in self.company_domains().items():
+            cached, skip = self._logo_state(domain)
+            if cached or not skip:
+                urls[name] = f"/logo/{domain}"
+        return urls
 
     def report(self):
         from sponsor_daily_report import generate_report
@@ -282,10 +686,16 @@ class Dashboard:
             return {"matches": [], "dropped": [], "counts": {}, "metadata": {},
                     "message": "Fetch jobs to build your first shortlist."}
         with self.report_lock:
+            # A new fetch or profile edit rebuilds at once. Otherwise the posting
+            # window (days long) moves slowly, so a report is reused for 15
+            # minutes; building one over thousands of jobs takes seconds.
             signature = (self.db_path.stat().st_mtime_ns, self.db_path.stat().st_size,
-                         self.profile_path.stat().st_mtime_ns, int(time.time() // 60))
+                         self.profile_path.stat().st_mtime_ns, int(time.time() // 900))
             if self.cache_signature != signature:
-                self.cache = generate_report(profile=profile, db_path=self.db_path)
+                report = generate_report(profile=profile, db_path=self.db_path)
+                add_filing_history(report, self.db_path)
+                add_fit_breakdown(report, self.db_path, profile)
+                self.cache = report
                 self.cache_signature = signature
             return self.cache
 
@@ -293,6 +703,11 @@ class Dashboard:
         if not self.profile():
             raise ValueError("Create your profile first.")
         key = data.get("job_key")
+        if data.get("remove") is True:
+            # Unsaving removes only the tracking record; the job stays in the feed.
+            if not isinstance(key, str) or not self.store.delete(self.owner, key):
+                raise ValueError("This application was already removed.")
+            return {"ok": True}
         old = next((row for row in self.store.list(self.owner)
                     if row["job_key"] == key), None)
         if old:
@@ -358,8 +773,10 @@ class Dashboard:
                 with closing(sqlite3.connect(self.db_path)) as destination:
                     source.backup(destination)
                 self.cache_signature = None
-        return (f"Update complete. {failed} boards failed; results are incomplete. Retry to refresh them."
-                if failed else "Update complete. Your matches are ready to refresh.")
+        if not failed:
+            return "Update complete. Your matches are ready to refresh."
+        boards = "1 job board" if failed == 1 else f"{failed} job boards"
+        return f"Update complete, but {boards} did not respond. Fetch again to retry them."
 
     def _run_task(self, action, command):
         log = self.workspace / "last-update.log"
@@ -435,22 +852,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin is not None and origin not in {f"http://{host}" for host in allowed}:
             return False
-        if self.path.startswith("/api/") and self.headers.get("Sec-Fetch-Site") == "cross-site":
+        # Another site must not be able to call the API or start logo fetches.
+        if (self.path.startswith(("/api/", "/logo/"))
+                and self.headers.get("Sec-Fetch-Site") == "cross-site"):
             return False
         return True
 
-    def send(self, code, content, content_type="application/json; charset=utf-8"):
+    PAGE_POLICY = ("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; "
+                   "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+                   "base-uri 'none'; form-action 'self'")
+    # Logos come from other sites. Sandboxed, an SVG cannot run script even when
+    # its URL is opened directly.
+    LOGO_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+
+    def send(self, code, content, content_type="application/json; charset=utf-8",
+             policy=PAGE_POLICY, cache="no-store"):
         if not isinstance(content, bytes):
             content = json.dumps(content, allow_nan=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; "
-                         "style-src 'self'; font-src 'self'; img-src 'self' data:; "
-                         "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        self.send_header("Content-Security-Policy", policy)
         self.end_headers()
         self.wfile.write(content)
 
@@ -471,13 +896,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send(200, dict(app.task))
             elif path == "/api/setup-guide":
                 self.send(200, app.setup_instructions())
+            elif path.startswith("/logo/"):
+                found = app.logo(path[len("/logo/"):])
+                if found:
+                    self.send(200, found[1], found[0], policy=self.LOGO_POLICY,
+                              cache="private, max-age=86400")
+                else:
+                    self.send(404, {"error": "No logo for this company."})
             else:
                 # A fixed allowlist avoids ever serving profiles, databases or credentials.
                 assets = {"/": "index.html", "/index.html": "index.html",
-                          "/app.js": "app.js", "/style.css": "style.css",
-                          "/instrument-sans-400.ttf": "instrument-sans-400.ttf",
-                          "/instrument-sans-500.ttf": "instrument-sans-500.ttf",
-                          "/instrument-sans-600.ttf": "instrument-sans-600.ttf"}
+                          "/app.js": "app.js", "/theme.js": "theme.js",
+                          "/style.css": "style.css",
+                          "/hanken-grotesk.ttf": "hanken-grotesk.ttf"}
                 filename = assets.get(path)
                 if not filename:
                     self.send(404, {"error": "Not found."})

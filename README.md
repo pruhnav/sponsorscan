@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="assets/job-boards.gif"
-       alt="Live postings from Greenhouse, Lever, Ashby and Workday" width="100%"><br>
+       alt="Live postings from Greenhouse, Lever, Ashby, Workday, Eightfold and Amazon" width="100%"><br>
   <picture>
     <source media="(max-width: 700px)" srcset="assets/citizens-marquee-mobile.svg">
     <img src="assets/citizens-marquee.svg"
@@ -19,8 +19,8 @@ It joins two sources that cannot go stale on someone else's schedule:
 
 - **DOL OFLC LCA disclosure data.** Quarterly, official, a legal filing
   requirement. Free bulk download, no API key.
-- **Public ATS job board APIs** (Greenhouse, Lever, Ashby, Workday). Served straight from
-  the employer, no aggregator in between.
+- **Public ATS job board APIs** (Greenhouse, Lever, Ashby, Workday, Eightfold) and
+  Amazon's own job search. Served straight from the employer, no aggregator in between.
 
 The core workflow is:
 
@@ -31,11 +31,56 @@ The core workflow is:
 Then, optionally:
 
 4. Generate a personalized report ranked against your own skills and eligibility.
-5. Sync it to Google Sheets and send email notifications.
+5. Sync it to Google Sheets and send new jobs by email or Telegram.
 6. Run the whole thing on a schedule through GitHub Actions.
 
 `discover` also widens the company list automatically when you want broader
 coverage than the boards that ship in `companies.yaml`.
+
+## Local dashboard
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/dashboard-dark.png">
+    <img src="assets/dashboard-light.png"
+         alt="The SponsorScan dashboard: matching roles with company logos, H-1B and green card filings, profile fit and posting dates"
+         width="100%">
+  </picture>
+</p>
+
+After installing the dependencies below, start your personal workspace:
+
+```bash
+python sponsorscan.py dashboard
+```
+
+Your browser opens at **http://127.0.0.1:8765**. Create your profile in the
+dashboard, fetch jobs, and save applications with statuses and notes. No hosted
+account, Node.js installation, or frontend build is required.
+
+- **Matches** shows each role with the employer's H-1B and green card filings,
+  your profile fit, and the skills you matched. Open a role to see how its fit
+  score breaks down and which skills the posting asks for that you lack.
+- **Applications** keeps what you saved and where you applied, with notes.
+- **Integrations** walks through Telegram, email, Google Sheets and a schedule,
+  with commands you can copy into your terminal.
+- Light and dark themes, following your system setting by default.
+
+If you already have one personal profile in `profiles/`, it is selected
+automatically. To choose a particular profile:
+
+```bash
+python sponsorscan.py dashboard --profile profiles/my_profile.json
+```
+
+Applications live in `.sponsorscan-dashboard/applications.sqlite3` and survive
+job refreshes. A new dashboard profile is saved alongside them; an explicitly
+selected existing profile is updated in place. The dashboard does not consume
+email alert state or send email or Sheets updates. Those remain optional CLI
+integrations. Press **Ctrl+C** in the terminal to stop the server.
+
+See [the dashboard guide](docs/DASHBOARD.md) for first-run steps, backups,
+alternate ports, and how local updates work.
 
 ## Install
 
@@ -224,6 +269,7 @@ to validate a profile at the same time.
 | Setup for U.S. citizens | [docs/CITIZEN_SETUP.md](docs/CITIZEN_SETUP.md) |
 | Google Sheets sync | [docs/GOOGLE_SHEETS_SETUP.md](docs/GOOGLE_SHEETS_SETUP.md) |
 | Email notifications | [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) |
+| Telegram alerts | [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) |
 | Running it on a schedule, unattended | [docs/REFERENCE.md](docs/REFERENCE.md#github-actions-automation) |
 | Help from an AI coding assistant | Open the repository in Claude Code, Codex, Cursor or Copilot and ask it to set things up. [AGENTS.md](AGENTS.md) tells it how. |
 

@@ -836,3 +836,196 @@ def test_prebuilt_table_carries_perm_filings(monkeypatch, tmp_path):
     assert con.execute("SELECT certified, perm_certified FROM employers "
                        "WHERE employer_norm = 'acme'").fetchone() == (1, 2)
     con.close()
+
+
+# ------------------------------------------------------------------ amazon
+
+def _amazon_job(n, **extra):
+    job = {"id_icims": str(n), "title": f"Software Development Engineer {n}",
+           "normalized_location": "Seattle, Washington, USA", "location": "US, WA, Seattle",
+           "job_path": f"/en/jobs/{n}/sde", "posted_date": "November  6, 2026",
+           "description": "<p>Build services.</p>",
+           "basic_qualifications": "- 3+ years of professional software development experience",
+           "preferred_qualifications": "- Master's degree in computer science"}
+    job.update(extra)
+    return job
+
+
+class _AmazonAPI:
+    """Serves pages of `jobs`, recording each request's parameters."""
+
+    def __init__(self, jobs, page=None):
+        self.jobs, self.page, self.calls = jobs, page, []
+
+    def __call__(self, url, params=None, headers=None, timeout=None):
+        assert url == "https://www.amazon.jobs/en/search.json"
+        params = list(params)
+        self.calls.append(params)
+        offset, limit = int(dict(params)["offset"]), int(dict(params)["result_limit"])
+        r = requests.Response()
+        r.status_code = 200
+        rows = self.page if self.page is not None else self.jobs[offset:offset + limit]
+        r._content = json.dumps({"hits": len(self.jobs), "jobs": rows}).encode()
+        return r
+
+
+def test_amazon_job_becomes_a_posting_with_its_qualifications(monkeypatch):
+    monkeypatch.setattr(requests, "get", _AmazonAPI([_amazon_job(7)]))
+    job, = ss.fetch_amazon("software-development")
+    assert job["job_key"] == "amazon:7" and job["source"] == "amazon"
+    assert job["location"] == "Seattle, Washington, USA"
+    assert job["url"] == "https://www.amazon.jobs/en/jobs/7/sde"
+    assert job["posted"] == "2026-11-06"
+    # The experience requirement lives in the qualifications, which the
+    # report's filters must see.
+    assert "Build services." in job["description"]
+    assert "3+ years of professional software development" in job["description"]
+
+
+def test_amazon_pages_us_jobs_in_the_chosen_categories(monkeypatch):
+    api = _AmazonAPI([_amazon_job(n) for n in range(ss.AMAZON_PAGE + 5)])
+    monkeypatch.setattr(requests, "get", api)
+    jobs = ss.fetch_amazon("software-development, data-science")
+    assert len(jobs) == ss.AMAZON_PAGE + 5 and len(api.calls) == 2
+    first = api.calls[0]
+    assert ("normalized_country_code[]", "USA") in first and ("sort", "recent") in first
+    assert [v for k, v in first if k == "category[]"] == ["software-development", "data-science"]
+
+
+def test_amazon_all_searches_every_category(monkeypatch):
+    api = _AmazonAPI([_amazon_job(1)])
+    monkeypatch.setattr(requests, "get", api)
+    ss.fetch_amazon("all")
+    assert not [v for k, v in api.calls[0] if k == "category[]"]
+
+
+def test_amazon_stops_when_the_api_repeats_a_page(monkeypatch):
+    # An API that ignores `offset` must not loop to the page cap.
+    api = _AmazonAPI([], page=[_amazon_job(n) for n in range(ss.AMAZON_PAGE)])
+    monkeypatch.setattr(requests, "get", api)
+    assert len(ss.fetch_amazon("all")) == ss.AMAZON_PAGE
+    assert len(api.calls) == 2
+
+
+def test_amazon_links_only_to_its_own_site(monkeypatch):
+    jobs = [_amazon_job(1, job_path="https://evil.example/steal"), _amazon_job(2, posted_date="soon")]
+    monkeypatch.setattr(requests, "get", _AmazonAPI(jobs))
+    first, second = ss.fetch_amazon("all")
+    assert first["url"] == ""
+    assert second["posted"] == ""  # an unreadable date is left blank, not guessed
+
+
+# --------------------------------------------------------------- eightfold
+
+class _EightfoldAPI:
+    """A fake Eightfold PCSX tenant. `refuse` maps a path to how many 429s to
+    send before answering."""
+
+    def __init__(self, positions, refuse=None):
+        self.positions, self.refuse, self.calls = positions, dict(refuse or {}), []
+
+    def __call__(self, url, params=None, headers=None, timeout=None):
+        path = url.split("/api/pcsx/")[1]
+        self.calls.append((path, dict(params)))
+        r = requests.Response()
+        if self.refuse.get(path, 0) > 0:
+            self.refuse[path] -= 1
+            r.status_code, r._content = 429, b"Please try again later"
+            return r
+        r.status_code = 200
+        if path == "search":
+            start, query = int(params["start"]), params["query"]
+            rows = [p for p in self.positions if query in p.get("queries", [query])][start:start + ss.EIGHTFOLD_PAGE]
+            body = {"data": {"count": len(self.positions), "positions": rows}}
+        else:
+            position = next(p for p in self.positions if p["id"] == params["position_id"])
+            body = {"data": {"jobDescription": f"<p>About {position['name']}</p>",
+                             "publicUrl": position.get("publicUrl", f"https://careers.example.com/job/{position['id']}")}}
+        r._content = json.dumps(body).encode()
+        return r
+
+
+def _position(n, name="Software Engineer", **extra):
+    return {"id": n, "name": name, "locations": ["United States, Washington, Redmond"],
+            "postedTs": 1793930550, "positionUrl": f"/careers/job/{n}", **extra}
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(ss.time, "sleep", lambda seconds: None)
+
+
+def test_eightfold_reads_us_postings_with_descriptions(monkeypatch, no_sleep):
+    api = _EightfoldAPI([_position(1)])
+    monkeypatch.setattr(requests, "get", api)
+    job, = ss.fetch_eightfold("careers.example.com/careers?domain=example.com&query=software engineer")
+    assert job["job_key"] == "eightfold:careers.example.com:1" and job["source"] == "eightfold"
+    assert job["location"] == "United States, Washington, Redmond"
+    assert job["url"] == "https://careers.example.com/job/1"
+    assert job["posted"] == "2026-11-06"
+    assert "About Software Engineer" in job["description"]
+    search = api.calls[0][1]
+    assert search["domain"] == "example.com" and search["location"] == "United States"
+    assert search["query"] == "software engineer" and search["sort_by"] == "timestamp"
+
+
+def test_eightfold_skips_senior_titles_without_asking_for_them(monkeypatch, no_sleep):
+    api = _EightfoldAPI([_position(1, "Senior Software Engineer"), _position(2, "Software Engineer II"),
+                         _position(3, "Principal Applied Scientist"), _position(4, "Software Engineer")])
+    monkeypatch.setattr(requests, "get", api)
+    jobs = ss.fetch_eightfold("careers.example.com/careers?domain=example.com")
+    assert [job["job_key"] for job in jobs] == ["eightfold:careers.example.com:4"]
+    assert [params["position_id"] for path, params in api.calls if path == "position_details"] == [4]
+
+
+def test_eightfold_waits_out_a_rate_limit(monkeypatch, no_sleep):
+    api = _EightfoldAPI([_position(1)], refuse={"search": 2})
+    monkeypatch.setattr(requests, "get", api)
+    assert len(ss.fetch_eightfold("careers.example.com/careers?domain=example.com")) == 1
+
+
+def test_eightfold_keeps_what_it_read_when_the_site_keeps_refusing(monkeypatch, no_sleep):
+    api = _EightfoldAPI([_position(1), _position(2)])
+    monkeypatch.setattr(requests, "get", api)
+    original = api.__call__
+
+    def refuse_second_detail(url, params=None, **kwargs):
+        if url.endswith("position_details") and params["position_id"] == 2:
+            api.refuse["position_details"] = 99
+        return original(url, params=params, **kwargs)
+
+    monkeypatch.setattr(requests, "get", refuse_second_detail)
+    jobs = ss.fetch_eightfold("careers.example.com/careers?domain=example.com")
+    assert [job["job_key"] for job in jobs] == ["eightfold:careers.example.com:1"]
+
+
+def test_eightfold_fails_when_nothing_could_be_read(monkeypatch, no_sleep):
+    monkeypatch.setattr(requests, "get", _EightfoldAPI([_position(1)], refuse={"search": 99}))
+    with pytest.raises(RuntimeError, match="slow down"):
+        ss.fetch_eightfold("careers.example.com/careers?domain=example.com")
+
+
+def test_eightfold_dedupes_across_queries_and_rejects_foreign_links(monkeypatch, no_sleep):
+    api = _EightfoldAPI([_position(1, publicUrl="https://evil.example/job")])
+    monkeypatch.setattr(requests, "get", api)
+    jobs = ss.fetch_eightfold("careers.example.com/careers?domain=example.com&query=a&query=b")
+    assert len(jobs) == 1
+    assert jobs[0]["url"] == "https://careers.example.com/careers/job/1"  # its own site, not the foreign link
+
+
+def test_workday_slug_can_narrow_a_big_board_by_category(monkeypatch):
+    # Walmart's board is mostly store roles; its Technology category is 767.
+    sent = []
+
+    def fake_post(url, headers=None, timeout=None, json=None):
+        sent.append((url, json["appliedFacets"]))
+        r = requests.Response()
+        r.status_code, r._content = 200, b'{"total": 0, "jobPostings": []}'
+        return r
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    ss.fetch_workday("walmart/wd504/WalmartExternal?jobFamilyGroup=tech&jobFamilyGroup=data")
+    ss.fetch_workday("adobe/wd5/external_experienced")
+    assert sent[0] == ("https://walmart.wd504.myworkdayjobs.com/wday/cxs/walmart/WalmartExternal/jobs",
+                       {"jobFamilyGroup": ["tech", "data"]})
+    assert sent[1][1] == {}

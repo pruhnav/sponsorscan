@@ -21,6 +21,7 @@ import csv
 import json
 import os
 import re
+import unicodedata
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -44,6 +45,11 @@ DEFAULT_STATE = Path(".sponsorscan_state.json")
 # the built-in default always agree on what a family means.
 
 ROLE_DEFINITIONS = [
+    # First, because its titles often contain another family's name
+    # ("Forward Deployed AI Engineer"), and its pattern matches nothing else.
+    ("Forward Deployed Engineer",
+     [r"\bforward[ -]deployed (?:software |ai |ml |product )?engineer\b",
+      r"\bforward[ -]deployed engineering\b", r"\bfde\b"], 49),
     ("Machine Learning Engineer",
      [r"\bmachine learning engineer\b", r"\bml engineer\b",
       r"\bml platform engineer\b"], 64),
@@ -455,6 +461,21 @@ AUTHORIZATION_CHECKS = {
     "reject_clearance_roles": CLEARANCE_RES,
 }
 
+# Words each pattern above cannot match without, in the same order. Looking for
+# a plain word costs a sliver of a regex scan, and most postings never mention
+# sponsorship, citizenship or clearance, so a pattern whose words are all absent
+# is skipped. Every match contains one of its words, so no result changes.
+# A pattern added above needs its words here; a test checks the counts line up.
+AUTHORIZATION_GATES = {
+    "reject_no_future_sponsorship": [("sponsor",), ("sponsorship",), ("sponsorship",), ("future",)],
+    "reject_opt_excluded": [("opt", "cpt"), ("opt", "cpt")],
+    "reject_permanent_authorization_required": [("work authorization",),
+                                                ("permanent resident", "green card holder")],
+    "reject_citizenship_required": [("citizen", "person", "national"), ("citizenship",),
+                                    ("only",), ("only",)],
+    "reject_clearance_roles": [("security clearance",), ("itar",), ("export",)],
+}
+
 
 # How each authorization rule is named in the dropped-jobs CSV.
 AUTHORIZATION_LABELS = {
@@ -483,6 +504,7 @@ def authorization_conflict(blob, profile):
                 return f"work authorization: {_quoted(match)}"
         return None
 
+    lowered = blob.lower()
     for flag, patterns in AUTHORIZATION_CHECKS.items():
         if not profile.get(flag, True):
             continue
@@ -490,7 +512,9 @@ def authorization_conflict(blob, profile):
         # whatever an older citizen profile's defaults say.
         if flag == "reject_no_future_sponsorship" and not needs_sponsorship(profile):
             continue
-        for pattern in patterns:
+        for pattern, words in zip(patterns, AUTHORIZATION_GATES[flag]):
+            if not any(word in lowered for word in words):
+                continue
             match = pattern.search(blob)
             if match:
                 return f"{AUTHORIZATION_LABELS[flag]}: {_quoted(match)}"
@@ -562,9 +586,22 @@ def matches_preferred_company(company, preferred):
     )
 
 
+# A country name means "anywhere in the US", which every match already is
+# (postings elsewhere are filtered out), so it boosts nothing. Matched as text,
+# "USA" would boost only postings that spell the country out, and "US" would
+# boost every Austin and Houston job.
+US_COUNTRY_NAMES = {"us", "usa", "unitedstates", "unitedstatesofamerica", "america",
+                    "theus", "theusa", "theunitedstates", "anywhereintheus"}
+
+
+def is_country_location(value):
+    return re.sub(r"[\s.]", "", str(value or "").lower()) in US_COUNTRY_NAMES
+
+
 def matches_preferred_location(location, preferred):
     loc = (location or "").lower()
-    return any(str(p).strip().lower() in loc for p in (preferred or []) if str(p).strip())
+    return any(str(p).strip().lower() in loc for p in (preferred or [])
+               if str(p).strip() and not is_country_location(p))
 
 
 # ------------------------------------------------------------ US location
@@ -590,18 +627,114 @@ US_STATE_NAMES = {
     "district of columbia",
 }
 
-NON_US = {
-    "canada", "india", "united kingdom", "ireland", "germany", "france",
-    "spain", "italy", "netherlands", "belgium", "sweden", "norway", "denmark",
-    "finland", "poland", "romania", "portugal", "switzerland", "austria",
-    "australia", "new zealand", "singapore", "japan", "china", "taiwan",
-    "south korea", "korea", "israel", "brazil", "mexico", "argentina",
-    "colombia", "chile", "philippines", "indonesia", "malaysia", "thailand",
-    "vietnam", "hong kong", "uae", "dubai", "berlin", "toronto", "vancouver",
-    "london", "dublin", "paris", "amsterdam", "munich",
-    # Regions that are not the US but read as "remote-friendly".
-    "europe", "emea", "apac", "latam", "worldwide", "anywhere in the world",
+# Countries other than the US. Names that are also US states or territories
+# (Georgia, Jersey, Samoa) are left out: the US checks run first, and a bare
+# "Georgia" is far likelier to mean the state.
+NON_US_COUNTRIES = {
+    "afghanistan", "albania", "algeria", "andorra", "angola", "argentina",
+    "armenia", "australia", "austria", "azerbaijan", "bahamas", "bahrain",
+    "bangladesh", "barbados", "belarus", "belgium", "belize", "benin", "bhutan",
+    "bolivia", "bosnia", "botswana", "brazil", "brunei", "bulgaria",
+    "burkina faso", "burundi", "cambodia", "cameroon", "canada", "cape verde",
+    "chad", "chile", "china", "colombia", "congo", "costa rica", "croatia",
+    "cuba", "cyprus", "czechia", "czech republic", "denmark", "djibouti",
+    "dominican republic", "ecuador", "egypt", "el salvador", "estonia",
+    "eswatini", "ethiopia", "fiji", "finland", "france", "gabon", "gambia",
+    "germany", "ghana", "greece", "guatemala", "guinea", "guyana", "haiti",
+    "honduras", "hungary", "iceland", "india", "indonesia", "iran", "iraq",
+    "ireland", "israel", "italy", "ivory coast", "jamaica", "japan", "jordan",
+    "kazakhstan", "kenya", "kosovo", "kuwait", "kyrgyzstan", "laos", "latvia",
+    "lebanon", "lesotho", "liberia", "libya", "liechtenstein", "lithuania",
+    "luxembourg", "madagascar", "malawi", "malaysia", "maldives", "mali",
+    "malta", "mauritania", "mauritius", "mexico", "moldova", "monaco",
+    "mongolia", "montenegro", "morocco", "mozambique", "myanmar", "namibia",
+    "nepal", "netherlands", "new zealand", "nicaragua", "niger", "nigeria",
+    "north macedonia", "macedonia", "norway", "oman", "pakistan", "panama",
+    "papua new guinea", "paraguay", "peru", "philippines", "poland",
+    "portugal", "qatar", "romania", "russia", "rwanda", "saudi arabia",
+    "senegal", "serbia", "seychelles", "sierra leone", "singapore",
+    "slovakia", "slovenia", "somalia", "south africa", "south korea", "korea",
+    "spain", "sri lanka", "sudan", "suriname", "sweden", "switzerland",
+    "syria", "taiwan", "tajikistan", "tanzania", "thailand", "togo",
+    "trinidad", "tunisia", "turkey", "turkiye", "turkmenistan", "uganda",
+    "ukraine", "uae", "united arab emirates", "united kingdom", "uk", "u.k.",
+    "england", "scotland", "wales", "northern ireland", "great britain",
+    "britain", "uruguay", "uzbekistan", "venezuela", "vietnam", "viet nam",
+    "yemen", "zambia", "zimbabwe", "hong kong", "macau",
 }
+
+# Cities that job boards list without a country. A name shared with a common
+# bare US place (Birmingham, Cambridge, Melbourne, Warsaw, Moscow, Lima) is left
+# out, so those stay "unclear" rather than drop a US job; the country name
+# still catches "Warsaw, Poland".
+NON_US_CITIES = {
+    "toronto", "vancouver", "montreal", "ottawa", "calgary", "edmonton",
+    "winnipeg", "quebec city", "halifax",
+    "mexico city", "guadalajara", "monterrey", "sao paulo", "rio de janeiro",
+    "belo horizonte", "curitiba", "porto alegre", "florianopolis", "recife",
+    "bogota", "medellin", "buenos aires", "santiago", "montevideo", "quito",
+    "london", "edinburgh", "glasgow", "dublin", "belfast", "paris", "lyon",
+    "berlin", "munich", "hamburg", "frankfurt", "cologne", "stuttgart",
+    "amsterdam", "rotterdam", "the hague", "eindhoven", "brussels", "antwerp",
+    "zurich", "geneva", "lausanne", "basel", "stockholm", "gothenburg",
+    "copenhagen", "oslo", "helsinki", "krakow", "wroclaw", "gdansk",
+    "prague", "brno", "budapest", "bucharest", "cluj", "sofia", "bratislava",
+    "lisbon", "porto", "madrid", "barcelona", "milan", "turin", "athens",
+    "istanbul", "ankara", "kyiv", "kiev", "lviv", "tallinn", "riga", "vilnius",
+    "belgrade", "zagreb", "ljubljana", "luxembourg city",
+    "tel aviv", "tel aviv-yafo", "herzliya", "haifa", "jerusalem", "dubai",
+    "abu dhabi", "riyadh", "doha", "cairo", "lagos", "nairobi", "cape town",
+    "johannesburg", "casablanca",
+    "bangalore", "bengaluru", "hyderabad", "pune", "chennai", "mumbai",
+    "delhi", "new delhi", "gurgaon", "gurugram", "noida", "kolkata",
+    "ahmedabad", "kochi", "trivandrum", "chandigarh", "jaipur", "karachi",
+    "lahore", "islamabad", "dhaka", "colombo",
+    "singapore", "kuala lumpur", "penang", "jakarta", "manila", "makati",
+    "cebu", "bangkok", "ho chi minh city", "hanoi", "da nang",
+    "tokyo", "osaka", "kyoto", "seoul", "busan", "beijing", "shanghai",
+    "shenzhen", "guangzhou", "hangzhou", "chengdu", "taipei", "hsinchu",
+    "sydney", "brisbane", "perth", "adelaide", "canberra", "auckland",
+    "wellington",
+}
+
+# Regions that are not the US but read as "remote-friendly".
+NON_US_REGIONS = {
+    "europe", "emea", "apac", "latam", "asia", "africa", "middle east",
+    "oceania", "south america", "latin america", "central america",
+    "caribbean", "nordics", "dach", "benelux", "anz", "eu",
+    "worldwide", "anywhere in the world",
+}
+
+NON_US = NON_US_COUNTRIES | NON_US_CITIES | NON_US_REGIONS
+
+# US cities job boards list without a state ("San Francisco", "Seattle
+# Office"). Names shared with a well-known place abroad (Cambridge, Durham,
+# Richmond, Birmingham, London, Paris) are left out, so "Durham, England" is not
+# read as North Carolina.
+US_CITIES = {
+    "san francisco", "south san francisco", "bay area", "sf bay area", "silicon valley",
+    "san jose", "mountain view", "palo alto", "menlo park", "sunnyvale", "cupertino",
+    "santa clara", "redwood city", "san mateo", "foster city", "burlingame", "oakland",
+    "berkeley", "emeryville", "fremont", "milpitas", "los gatos", "san bruno",
+    "los angeles", "santa monica", "culver city", "playa vista", "irvine", "san diego",
+    "pasadena", "burbank", "sacramento",
+    "seattle", "redmond", "bellevue", "kirkland", "bothell", "tacoma",
+    "portland", "hillsboro", "beaverton",
+    "new york city", "nyc", "manhattan", "brooklyn", "jersey city", "hoboken",
+    "boston", "somerville", "waltham", "burlington", "needham",
+    "austin", "dallas", "houston", "san antonio", "plano", "irving", "frisco",
+    "chicago", "evanston", "denver", "boulder", "atlanta", "alpharetta",
+    "miami", "tampa", "orlando", "raleigh", "chapel hill", "research triangle",
+    "charlotte", "nashville", "pittsburgh", "philadelphia", "baltimore",
+    "arlington", "reston", "herndon", "mclean", "tysons", "chantilly", "bethesda",
+    "rockville", "minneapolis", "st. paul", "saint paul", "detroit", "ann arbor",
+    "columbus", "cincinnati", "cleveland", "indianapolis", "st. louis", "saint louis",
+    "kansas city", "omaha", "salt lake city", "lehi", "phoenix", "scottsdale",
+    "tempe", "chandler", "las vegas", "albuquerque", "madison", "milwaukee",
+    "bentonville", "louisville", "new orleans", "honolulu", "anchorage",
+    "washington dc", "washington, dc", "washington d.c.",
+}
+US_CITY_RE = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, US_CITIES), key=len, reverse=True)) + r")\b")
 # Whole words only, so "india" does not match "Indiana" or "Indianapolis".
 NON_US_RE = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, NON_US))) + r")\b")
 
@@ -631,23 +764,33 @@ def _segment_is_us(segment):
     return bool(tail and tail.group(1) in US_STATE_CODES)
 
 
+def _plain(text):
+    """Lowercase without accents, so "São Paulo" and "Kraków" match their list
+    entries the way boards spell them either way."""
+    decomposed = unicodedata.normalize("NFKD", str(text or "").strip().lower())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
 def location_verdict(location):
     """"us", "non_us" or "unclear" for a posting's location.
 
     A location listing several places is in the US when any of them is: "New
     York or London" is a job you can take in New York. It is outside the US
     only when it names somewhere else and nowhere in the US. Everything else is
-    unclear: a bare city ("San Francisco"), "Remote", "Hybrid", "2 Locations".
+    unclear: a city it does not know, "Remote", "Hybrid", "2 Locations".
     Those are kept and flagged rather than dropped, because a wrong drop costs a
     job the user never sees, and a wrong keep costs a glance.
     """
-    loc = (location or "").strip().lower()
+    loc = _plain(location)
     if not loc:
         return "unclear"
     if any(term in loc for term in US_EXPLICIT):
         return "us"
     segments = [s.strip().rstrip(".") for s in _LOCATION_SPLIT.split(loc)]
     if any(_segment_is_us(s) for s in segments if s):
+        return "us"
+    # Before the foreign check, so "New York City or London" is a US option.
+    if US_CITY_RE.search(loc):
         return "us"
     if NON_US_RE.search(loc):
         return "non_us"
@@ -1071,56 +1214,54 @@ def build_parser():
     return parser
 
 
-def main():
-    args = build_parser().parse_args()
+def generate_report(profile=None, db_path=None, hours=None, min_score=None,
+                    include_unknown_posted=False):
+    """Return ranked matches without changing reports or notification state.
 
-    profile = None
-    if args.profile:
-        try:
-            profile = load_profile(args.profile)
-        except ProfileError as exc:
-            raise SystemExit(f"Invalid profile: {exc}")
-        print(f"Loaded profile: {describe_profile(profile)}")
-        for warning in authorization_warnings(profile):
-            print(f"  warning: {warning}")
+    ``profile`` is a validated profile dictionary, as returned by load_profile.
+    The database is opened read-only. The result contains ``matches``, ``dropped``,
+    ``counts`` and JSON-safe ``metadata``. Alert novelty is deliberately unknown:
+    ``is_new_since_last_run`` is empty because browsing is not a notification run.
+    Missing databases raise FileNotFoundError; invalid input/schema raises
+    ValueError. SQLite errors propagate to callers for actionable UI handling.
+    """
+    db_path = Path(db_path) if db_path is not None else DB_PATH
+    if not db_path.is_file():
+        raise FileNotFoundError(
+            f"Could not find {db_path}. Run `sponsorscan.py fetch-jobs` first.")
+    hours = hours if hours is not None else (profile or {}).get("report_hours", 48)
+    min_score = min_score if min_score is not None else \
+        (profile or {}).get("minimum_score", 95)
+    if not isinstance(hours, (int, float)) or not 0 < hours < float("inf"):
+        raise ValueError("Report hours must be a finite number greater than 0.")
+    args = argparse.Namespace(hours=hours, min_score=min_score, fuzzy_cutoff=90,
+                              include_non_us=False,
+                              include_unknown_posted=include_unknown_posted)
+    report = _generate_report(profile, db_path, args)
+    for row in report["matches"]:
+        row["is_new_since_last_run"] = ""
+    return {key: report[key] for key in ("matches", "dropped", "counts", "metadata")}
 
-    output_config = (profile or {}).get("output_files", {})
-    args.out = args.out or output_config.get("all_matches") or "matches_48h.csv"
-    args.new_out = args.new_out or output_config.get("new_matches") or "new_jobs_48h.csv"
-    args.state = args.state or output_config.get("state") or str(DEFAULT_STATE)
-    # Beside the matches file unless named: "x_matches_48h.csv" gives
-    # "x_matches_48h_dropped.csv".
-    out_path = Path(args.out)
-    args.dropped_out = args.dropped_out or output_config.get("dropped") or str(
-        out_path.with_name(f"{out_path.stem}_dropped{out_path.suffix}"))
-    if args.min_score is None:
-        args.min_score = (profile or {}).get("minimum_score", 95)
-    if args.hours is None:
-        args.hours = (profile or {}).get("report_hours", 48)
 
-    if args.hours <= 0:
-        raise SystemExit("--hours must be greater than 0.")
-
-    db_path = Path(args.db) if args.db else DB_PATH
-    if not db_path.exists():
-        raise SystemExit(f"Could not find {db_path}. Run `sponsorscan.py fetch-jobs` first.")
-
+def _generate_report(profile, db_path, args, seen=None, tracked_companies=None,
+                     url_keyed=False):
+    """Shared read-only ranking engine for the CLI and local dashboard."""
+    seen = seen or {}
     target_roles = build_target_roles(profile)
     resume_skills = build_resume_skills(profile)
     tiers = build_company_tiers(profile)
     preferred_companies = (profile or {}).get("preferred_companies") or []
     preferred_locations = (profile or {}).get("preferred_locations") or []
 
-    state_path = Path(args.state)
-    seen, tracked_companies, url_keyed = ({}, None, False) if args.reset_state \
-        else load_previous_state(state_path)
-
     now_utc = datetime.now(timezone.utc)
     posted_cutoff = now_utc - timedelta(hours=args.hours)
 
-    con = sqlite3.connect(db_path)
+    con = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True)
     try:
-        employers = load_employers(con)
+        try:
+            employers = load_employers(con)
+        except SystemExit as exc:
+            raise ValueError(str(exc)) from exc
         current_fy = latest_fiscal_year(con)
         try:
             # lca_name arrived after the jobs table; a database last written by
@@ -1133,7 +1274,9 @@ def main():
                 + ("lca_name" if has_lca_name else "NULL") + " FROM jobs"
             ).fetchall()
         except sqlite3.OperationalError as exc:
-            raise SystemExit(f"Could not read jobs table: {exc}")
+            raise ValueError(
+                f"Could not read jobs table: {exc}. "
+                "Run `sponsorscan.py fetch-jobs` first.") from exc
         # Every employer on the boards this run, including boards that fetched
         # cleanly with no postings, which fetch-jobs records separately.
         companies_now = {row[1] for row in jobs if row[1]}
@@ -1145,9 +1288,11 @@ def main():
     finally:
         con.close()
 
+    warnings = []
     if not employers and needs_sponsorship(profile):
-        print("No LCA data loaded, so every sponsorship score is 0 and matches "
-              "rank on resume fit alone. Run `sponsorscan.py load-lca` first.")
+        warnings.append(
+            "No LCA data loaded, so every sponsorship score is 0 and matches "
+            "rank on resume fit alone. Run `sponsorscan.py load-lca` first.")
 
     employer_keys = list(employers.keys())
     fuzzy_cutoff = args.fuzzy_cutoff if HAVE_RAPIDFUZZ else 0
@@ -1328,6 +1473,67 @@ def main():
         row["application_priority"] = priority_label(
             row["combined_score"], row["resume_fit_score"])
         row.pop("_posted_ts", None)
+
+    return {
+        "matches": results, "dropped": dropped, "counts": counts,
+        "metadata": {
+            "generated_at_utc": now_utc.isoformat(),
+            "posted_cutoff_utc": posted_cutoff.isoformat(),
+            "hours": args.hours, "minimum_score": args.min_score,
+            "total_jobs": len(jobs), "warnings": warnings,
+        },
+        "now_utc": now_utc, "posted_cutoff": posted_cutoff,
+        "companies_now": companies_now, "baselined": baselined,
+    }
+
+
+def main():
+    args = build_parser().parse_args()
+
+    profile = None
+    if args.profile:
+        try:
+            profile = load_profile(args.profile)
+        except ProfileError as exc:
+            raise SystemExit(f"Invalid profile: {exc}")
+        print(f"Loaded profile: {describe_profile(profile)}")
+        for warning in authorization_warnings(profile):
+            print(f"  warning: {warning}")
+
+    output_config = (profile or {}).get("output_files", {})
+    args.out = args.out or output_config.get("all_matches") or "matches_48h.csv"
+    args.new_out = args.new_out or output_config.get("new_matches") or "new_jobs_48h.csv"
+    args.state = args.state or output_config.get("state") or str(DEFAULT_STATE)
+    # Beside the matches file unless named: "x_matches_48h.csv" gives
+    # "x_matches_48h_dropped.csv".
+    out_path = Path(args.out)
+    args.dropped_out = args.dropped_out or output_config.get("dropped") or str(
+        out_path.with_name(f"{out_path.stem}_dropped{out_path.suffix}"))
+    if args.min_score is None:
+        args.min_score = (profile or {}).get("minimum_score", 95)
+    if args.hours is None:
+        args.hours = (profile or {}).get("report_hours", 48)
+
+    if args.hours <= 0:
+        raise SystemExit("--hours must be greater than 0.")
+
+    db_path = Path(args.db) if args.db else DB_PATH
+    if not db_path.exists():
+        raise SystemExit(f"Could not find {db_path}. Run `sponsorscan.py fetch-jobs` first.")
+
+    state_path = Path(args.state)
+    seen, tracked_companies, url_keyed = ({}, None, False) if args.reset_state \
+        else load_previous_state(state_path)
+    try:
+        report = _generate_report(profile, db_path, args, seen,
+                                  tracked_companies, url_keyed)
+    except (ValueError, sqlite3.Error) as exc:
+        raise SystemExit(str(exc)) from exc
+    results, dropped, counts = report["matches"], report["dropped"], report["counts"]
+    now_utc, posted_cutoff = report["now_utc"], report["posted_cutoff"]
+    companies_now, baselined = report["companies_now"], report["baselined"]
+    for warning in report["metadata"]["warnings"]:
+        print(warning)
 
     new_results = [row for row in results if row["is_new_since_last_run"] == "YES"]
 

@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 40" width="900" height="40" role="img" aria-label="U.S. citizens and green card holders can use SponsorScan too. Sponsorship data from official DOL LCA filings; postings straight from Greenhouse, Lever, Ashby and Workday; no API keys; emails only new jobs.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 40" width="900" height="40" role="img" aria-label="U.S. citizens and green card holders can use SponsorScan too. Sponsorship data from official DOL H-1B and green card filings; postings straight from Greenhouse, Lever, Ashby, Workday, Eightfold and Amazon; no API keys; alerts by email or Telegram for new jobs only; a local dashboard to track applications.">
   <title>SponsorScan, also for U.S. citizens and green card holders</title>
   <style>
-    text { font-family: Consolas, "SFMono-Regular", Menlo, "Liberation Mono", monospace;
-           font-size: 15px; letter-spacing: 0.4px; fill: #8a8a90; }
-    .hi { fill: #3dd39b; font-weight: 700; }
+    text { font-family: "Segoe UI", -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+           font-size: 15px; letter-spacing: 0.2px; fill: #8a8a90; }
+    .hi { fill: #7aa7ff; font-weight: 600; }
     .sep { fill: #3a3a40; }
   </style>
   <defs>
@@ -13,7 +13,7 @@
     <linearGradient id="fade-r" x1="1" x2="0">
       <stop offset="0" stop-color="#0d0d0f"/><stop offset="1" stop-color="#0d0d0f" stop-opacity="0"/>
     </linearGradient>
-    <text id="msg" y="25" textLength="3600" lengthAdjust="spacing"><tspan class="hi">U.S. CITIZEN OR GREEN CARD HOLDER? IT WORKS FOR YOU TOO</tspan><tspan class="sep">   ◆   </tspan>sponsorship data from official DOL LCA filings<tspan class="sep">   ◆   </tspan>postings straight from Greenhouse, Lever, Ashby and Workday<tspan class="sep">   ◆   </tspan>drops postings that rule you out: clearance, PhD-required, senior titles, citizenship-only<tspan class="sep">   ◆   </tspan>no API keys, no aggregators<tspan class="sep">   ◆   </tspan>emails only jobs it has never shown you<tspan class="sep">   ◆   </tspan>runs on a schedule in GitHub Actions<tspan class="sep">   ◆   </tspan></text>
+    <text id="msg" y="25" textLength="4000" lengthAdjust="spacing"><tspan class="hi">U.S. citizen or green card holder? It works for you too</tspan><tspan class="sep">   |   </tspan>sponsorship data from official DOL filings, H-1B and green card<tspan class="sep">   |   </tspan>postings straight from Greenhouse, Lever, Ashby, Workday, Eightfold and Amazon<tspan class="sep">   |   </tspan>drops postings that rule you out: clearance, PhD-required, senior titles, citizenship-only<tspan class="sep">   |   </tspan>no API keys, no aggregators<tspan class="sep">   |   </tspan>alerts by email or Telegram, only for jobs it has never shown you<tspan class="sep">   |   </tspan>a local dashboard to track every application<tspan class="sep">   |   </tspan>runs on a schedule in GitHub Actions<tspan class="sep">   |   </tspan></text>
   </defs>
 
   <rect width="900" height="40" fill="#0d0d0f"/>
@@ -26,9 +26,9 @@
        900-wide strip, scaled to a phone, leaves the text too small to read. -->
   <g>
     <animateTransform attributeName="transform" type="translate"
-                      from="0 0" to="-3600 0" dur="100s" repeatCount="indefinite"/>
+                      from="0 0" to="-4000 0" dur="111s" repeatCount="indefinite"/>
     <use href="#msg" x="0"/>
-    <use href="#msg" x="3600"/>
+    <use href="#msg" x="4000"/>
   </g>
   <rect width="70" height="40" fill="url(#fade-l)"/>
   <rect x="830" width="70" height="40" fill="url(#fade-r)"/>

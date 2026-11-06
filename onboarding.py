@@ -19,7 +19,9 @@ import copy
 import importlib.util
 import json
 import re
+import shlex
 import sqlite3
+import textwrap
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -234,6 +236,17 @@ def warn_notification_env(profile, env, modules=SHEETS_MODULES) -> CheckResult:
             "Notification config", "WARN",
             "Enabled in the profile but unset: " + ", ".join(missing)
             + ". Setup steps: " + " and ".join(guides))
+
+    # Telegram has no profile switch: its two variables are the switch. One
+    # without the other is a setup stopped halfway, usually before the chat ID.
+    telegram = [k for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID") if env.get(k)]
+    if len(telegram) == 1:
+        unset = "TELEGRAM_CHAT_ID" if telegram == ["TELEGRAM_BOT_TOKEN"] else "TELEGRAM_BOT_TOKEN"
+        return CheckResult(
+            "Notification config", "WARN",
+            f"{telegram[0]} is set but {unset} is not. Run "
+            "python scripts/send_telegram.py --find-chat to get the chat ID. "
+            "Setup steps: docs/TELEGRAM_SETUP.md")
 
     if notifications.get("google_sheets_enabled") and any(
             importlib.util.find_spec(m) is None for m in modules):
@@ -563,6 +576,12 @@ def run_setup(ask, profiles_dir="profiles", notify=None) -> Path:
     return save_profile(build_profile(**answers), path)
 
 
+def _shell_quote(value, windows):
+    """Quote a literal argument without evaluating profile text as shell code."""
+    value = str(value)
+    return "'" + value.replace("'", "''") + "'" if windows else shlex.quote(value)
+
+
 def _shell_lines(env, windows) -> list[str]:
     """Set each variable in the user's shell. A None value is a hidden prompt,
     so a password never lands in the command history."""
@@ -570,10 +589,10 @@ def _shell_lines(env, windows) -> list[str]:
     for key, value in env:
         if windows:
             lines.append(f'$env:{key} = Read-Host "{key}"' if value is None
-                         else f'$env:{key} = "{value}"')
+                         else f'$env:{key} = {_shell_quote(value, windows)}')
         else:
             lines.append(f'read -s -p "{key}: " {key}; echo; export {key}'
-                         if value is None else f'export {key}="{value}"')
+                         if value is None else f'export {key}={_shell_quote(value, windows)}')
     return lines
 
 
@@ -581,167 +600,272 @@ def _block(lines, indent=7) -> list[str]:
     return [" " * indent + line for line in lines]
 
 
-def setup_guide(profile, profile_path, windows=False) -> str:
-    """What to do after `setup`, including the browser steps for each extra.
+def _profile_file_command(profile, profile_path, windows) -> list[str]:
+    """Copy a profile outside profiles/ (the dashboard keeps its own) into the
+    folder the workflow reads, then add it past .gitignore."""
+    target = f"profiles/{profile['profile_id']}.json"
+    lines = []
+    if Path(profile_path).as_posix() != target:
+        source = _shell_quote(profile_path, windows)
+        lines.append(f"Copy-Item {source} {target}" if windows else f"cp {source} {target}")
+    return lines + [f"git add -f {target}"]
 
-    Pure, like build_profile: the caller decides the shell. The steps are
-    condensed from docs/EMAIL_SETUP.md and docs/GOOGLE_SHEETS_SETUP.md, and the
-    commands carry this profile's own CSV names, because the scripts otherwise
-    look for the default matches_48h.csv.
+
+def setup_sections(profile, profile_path, windows=False, db_path=None) -> list[dict]:
+    """Every optional extra as numbered steps, for the dashboard and the terminal.
+
+    Pure, like build_profile: the caller decides the shell. A step has a title,
+    notes, an optional link to open, and `commands` to run or `snippet` lines to
+    paste into a file. Commands carry this profile's own file names, because the
+    scripts otherwise look for the default matches_48h.csv. Passwords and tokens
+    are always read by a hidden prompt, so they never land in command history.
+    The steps are condensed from the guides each section names.
     """
     outputs = profile["output_files"]
+    profile_argument = _shell_quote(profile_path, windows)
+    db_argument = f" --db {_shell_quote(db_path, windows)}" if db_path is not None else ""
+    new_jobs = _shell_lines([("NEW_JOBS_CSV", outputs["new_matches"])], windows)
+    key_secret = ("Get-Content service-account.json -Raw | gh secret set GOOGLE_SERVICE_ACCOUNT_JSON"
+                  if windows else "gh secret set GOOGLE_SERVICE_ACCOUNT_JSON < service-account.json")
+    copy_workflow = (["New-Item -ItemType Directory -Force .github/workflows | Out-Null",
+                      "Copy-Item workflows/sponsorscan.example.yml .github/workflows/sponsorscan.yml"]
+                     if windows else
+                     ["mkdir -p .github/workflows",
+                      "cp workflows/sponsorscan.example.yml .github/workflows/sponsorscan.yml"])
+    return [
+        {"id": "check", "title": "Check your setup", "guide": "README.md",
+         "summary": "Confirm your profile and data, then run a report in the terminal.",
+         "intro": [], "steps": [
+             {"title": "Check the setup",
+              "notes": ["Each problem it finds comes with the fix."],
+              "commands": [f"python sponsorscan.py doctor --profile {profile_argument}{db_argument}"]},
+             {"title": "Run your first report",
+              "notes": ["It writes this profile's CSV files, which the alert scripts read."],
+              "commands": [f"python sponsor_daily_report.py --profile {profile_argument}{db_argument}"]},
+         ]},
+        {"id": "telegram", "title": "Telegram alerts", "guide": "docs/TELEGRAM_SETUP.md",
+         "summary": "A message on your phone when new jobs appear. The quickest extra: no Google account.",
+         "intro": ["Each run sends one message that lists the new matches, with an Open "
+                   "button for each job, so your phone buzzes once per run."],
+         "steps": [
+             {"title": "Create your bot", "link": "https://t.me/BotFather", "notes": [
+                 "In Telegram, open @BotFather (it has a blue verified mark) and send /newbot.",
+                 "Choose a display name, then a username that ends in bot, such as "
+                 "yourname_sponsorscan_bot.",
+                 "BotFather replies with a token like 123456789:AAH... It is the bot's "
+                 "password: never paste it into a chat, an issue or a commit."]},
+             {"title": "Say hello to your bot", "notes": [
+                 "Open the t.me link BotFather gave you and press Start. A bot cannot "
+                 "message you first."]},
+             {"title": "Find your chat ID", "notes": [
+                 "Paste the token when it is asked for; it stays hidden. The script prints "
+                 "a line like TELEGRAM_CHAT_ID=987654321."],
+              "commands": [*_shell_lines([("TELEGRAM_BOT_TOKEN", None)], windows),
+                           "python scripts/send_telegram.py --find-chat"]},
+             {"title": "Check, then send a test message", "notes": [
+                 "Use the number it printed. A \"SponsorScan is connected\" message should arrive."],
+              "commands": [*_shell_lines([("TELEGRAM_CHAT_ID", "<the number it printed>")], windows),
+                           "python scripts/send_telegram.py --check",
+                           "python scripts/send_telegram.py --test"]},
+             {"title": "Send the new jobs after a report", "notes": [
+                 "Nothing is sent when there are none."],
+              "commands": [*new_jobs, "python scripts/send_telegram.py"]},
+         ]},
+        {"id": "email", "title": "Email alerts", "guide": "docs/EMAIL_SETUP.md",
+         "summary": "New matches in your inbox, sent from your own Gmail account.",
+         "intro": [
+             "Gmail does not accept your normal password from a script. It needs an App "
+             "Password: a separate 16-letter password that only SponsorScan uses.",
+             "Before you start: open each link in a browser signed in to the Gmail account "
+             "that will SEND the alerts. Your profile picture at the top right of each page "
+             "shows which account is active; click it to switch."],
+         "steps": [
+             {"title": "Turn on 2-Step Verification",
+              "link": "https://myaccount.google.com/signinoptions/twosv", "notes": [
+                  "Google may ask for your password first.",
+                  'If the page says "2-Step Verification is on", go to the next step.',
+                  'Otherwise click "Turn on 2-Step Verification" and follow the prompts. '
+                  "Google asks for a phone number and texts it a code."]},
+             {"title": "Create the App Password",
+              "link": "https://myaccount.google.com/apppasswords", "notes": [
+                  'In the "App name" box, type SponsorScan and click Create.',
+                  'A box titled "Generated app password" shows 16 letters in four groups, '
+                  "like: abcd efgh ijkl mnop",
+                  "Copy them now. Google never shows them again. If you lose them, delete "
+                  "this one on the same page and create another. Then click Done.",
+                  'Seeing "The setting you are looking for is not available"? 2-Step '
+                  "Verification is still off, or this is a work or school account. Use a "
+                  "personal Gmail account."]},
+             {"title": "Test the login", "notes": [
+                 "Paste the App Password when it is asked for; the spaces do not matter. It "
+                 "stays out of your command history, and nothing is sent yet.",
+                 '"Check passed. Nothing was sent." means it worked. Use your real addresses '
+                 "in place of the examples."],
+              "commands": [*_shell_lines([
+                  ("GMAIL_ADDRESS", "you@gmail.com"),
+                  ("GMAIL_APP_PASSWORD", None),
+                  ("NOTIFICATION_EMAIL", "where-alerts-go@example.com"),
+              ], windows), "python scripts/send_job_email.py --check"]},
+             {"title": "Email the new jobs after a report", "notes": [
+                 "Nothing is sent when there are none. Check your spam folder the first time."],
+              "commands": [*new_jobs, "python scripts/send_job_email.py"]},
+         ]},
+        {"id": "sheets", "title": "Google Sheet", "guide": "docs/GOOGLE_SHEETS_SETUP.md",
+         "summary": "Every match copied into a spreadsheet you can sort and share.",
+         "intro": [
+             "SponsorScan writes to the sheet as a service account: a robot Google account "
+             "you create, then share the sheet with. It is free; no billing account or "
+             "credit card is needed.",
+             "Before you start: use a personal Google account. Work and school accounts "
+             "often block the key download. Your profile picture at the top right of each "
+             "page shows which account is active; click it to switch."],
+         "steps": [
+             {"title": "Install the Google client libraries",
+              "notes": ["Run this in your SponsorScan terminal."],
+              "commands": ["pip install -r requirements-sheets.txt"]},
+             {"title": "Create a Google Cloud project",
+              "link": "https://console.cloud.google.com/projectcreate", "notes": [
+                  'First visit only: tick the Terms of Service box and click "Agree and continue".',
+                  '"Project name": type SponsorScan. Leave "Location" as it is.',
+                  "Click Create and wait about 30 seconds. The bell icon at the top right "
+                  "shows when it is ready."]},
+             {"title": "Turn on the Google Sheets API",
+              "link": "https://console.cloud.google.com/apis/library/sheets.googleapis.com",
+              "notes": [
+                  'Top left, next to "Google Cloud", the project picker must say SponsorScan. '
+                  "If not, click it and choose SponsorScan.",
+                  'Click the blue Enable button. It worked when the page shows "API Enabled" '
+                  "or a Manage button instead."]},
+             {"title": "Create the service account",
+              "link": "https://console.cloud.google.com/iam-admin/serviceaccounts", "notes": [
+                  "Check the project picker says SponsorScan again.",
+                  'Click "+ Create service account" near the top.',
+                  '"Service account name": type sponsorscan. The ID fills in by itself.',
+                  'Click "Create and continue", then Continue on the "Permissions (optional)" '
+                  "step, then Done. No role is needed.",
+                  "Back at the list, the new row's Email column ends in .iam.gserviceaccount.com."]},
+             {"title": "Download its key", "notes": [
+                 "In that list, click the service account's email address, then the Keys tab.",
+                 'Click "Add key", then "Create new key". Leave JSON selected and click '
+                 "Create. A .json file lands in your Downloads folder.",
+                 'Seeing "Service account key creation is disabled"? Your organization blocks '
+                 "keys. Start again with a personal account.",
+                 "Move the key file you just downloaded into the repository root as "
+                 "service-account.json.",
+                 "Git ignores that name. Never commit, share or paste its contents."]},
+             {"title": "Create the spreadsheet", "link": "https://sheets.new", "notes": [
+                 'A blank "Untitled spreadsheet" opens. Click that title at the top left to '
+                 "rename it, for example SponsorScan Jobs.",
+                 "Copy the whole URL from the address bar. It looks like "
+                 "https://docs.google.com/spreadsheets/d/1AbC.../edit"]},
+             {"title": "Share it with the service account", "notes": [
+                 "Print the service account's address with the command below. It reads only "
+                 "that one field of the key.",
+                 'In the spreadsheet, click Share and paste the address into "Add people, groups".',
+                 "The role beside it must say Editor, not Viewer.",
+                 'Untick "Notify people"; the address has no inbox. Then click Share.'],
+              "commands": ["python -c \"import json;print(json.load(open("
+                           "'service-account.json'))['client_email'])\""]},
+             {"title": "Test it", "notes": [
+                 "Paste the spreadsheet URL in place of the placeholder. \"Check passed. "
+                 "Nothing was written.\" means it worked; anything else names the step to redo."],
+              "commands": [*_shell_lines([
+                  ("GOOGLE_SERVICE_ACCOUNT_JSON", "service-account.json"),
+                  ("GOOGLE_SPREADSHEET_ID", "<paste the spreadsheet URL>"),
+              ], windows), "python scripts/update_google_sheet.py --check"]},
+             {"title": "Copy the results in after a report", "notes": [
+                 "Both tabs are replaced on every run, so keep your own notes, like an "
+                 "applied column, in a separate tab."],
+              "commands": [*_shell_lines([
+                  ("ALL_MATCHES_CSV", outputs["all_matches"]),
+                  ("NEW_JOBS_CSV", outputs["new_matches"]),
+              ], windows), "python scripts/update_google_sheet.py"]},
+         ]},
+        {"id": "schedule", "title": "Run on a schedule", "guide": "docs/REFERENCE.md#github-actions-automation",
+         "summary": "GitHub runs SponsorScan for you, so alerts arrive with your computer off.",
+         "intro": ["The commands in the other sections last only for one terminal window. "
+                   "GitHub Actions runs the whole pipeline on its own schedule and sends "
+                   "whichever alerts you set up."],
+         "steps": [
+             {"title": "Use a private repository", "link": "https://github.com/new", "notes": [
+                 "The schedule reads your profile from the repository, and it holds your "
+                 "name, skills and locations. Run it from a private repository you own.",
+                 "A fork of a public repository cannot be made private, so create a new "
+                 "private repository and push your copy to it."]},
+             {"title": "Add the workflow", "commands": copy_workflow},
+             {"title": "Point it at your profile", "notes": [
+                 "In .github/workflows/sponsorscan.yml, set these lines in the env: block."],
+              "snippet": [f"PROFILE_PATH: profiles/{profile['profile_id']}.json",
+                          f"ALL_MATCHES_CSV: {outputs['all_matches']}",
+                          f"NEW_JOBS_CSV: {outputs['new_matches']}",
+                          f"STATE_FILE: {outputs['state']}"]},
+             {"title": "Add your profile to the repository", "notes": [
+                 "Profiles are ignored by git, so this adds yours on purpose."],
+              "commands": _profile_file_command(profile, profile_path, windows)},
+             {"title": "Add the secrets for your extras", "notes": [
+                 "Run only the lines for the extras you set up. gh prompts for each "
+                 "password and token, so they never appear on screen. Each alert step "
+                 "skips itself until its secrets exist."],
+              "commands": ["gh auth login",
+                           "gh secret set TELEGRAM_BOT_TOKEN",
+                           'gh secret set TELEGRAM_CHAT_ID --body "<chat id>"',
+                           "gh secret set GMAIL_APP_PASSWORD",
+                           'gh secret set GMAIL_ADDRESS --body "you@gmail.com"',
+                           'gh secret set NOTIFICATION_EMAIL --body "where-alerts-go@example.com"',
+                           key_secret,
+                           'gh secret set GOOGLE_SPREADSHEET_ID --body "<spreadsheet URL>"']},
+             {"title": "Commit, push and start a run", "notes": [
+                 "Each run commits its state file back, so run git pull before you change "
+                 "anything locally."],
+              "commands": ["git add .github/workflows/sponsorscan.yml",
+                           'git commit -m "Run SponsorScan on a schedule"',
+                           "git push",
+                           "gh workflow run sponsorscan.yml",
+                           "gh run watch"]},
+         ]},
+    ]
+
+
+def _section_text(section) -> list[str]:
+    """One section as plain text for the terminal."""
+    out = ["", f"{section['title']} (full guide: {section['guide']})"]
+    for paragraph in section["intro"]:
+        out += ["", *textwrap.wrap(paragraph, 74)]
+    out.append("")
+    for number, step in enumerate(section["steps"], 1):
+        out.append(f"  {number}. {step['title']}")
+        if step.get("link"):
+            out.append(" " * 7 + step["link"])
+        for note in step.get("notes", []):
+            out += textwrap.wrap(note, 76, initial_indent="     - ", subsequent_indent="       ")
+        out += _block(step.get("commands", []) + step.get("snippet", []))
+        out.append("")
+    return out[:-1]
+
+
+def setup_guide(profile, profile_path, windows=False, db_path=None) -> str:
+    """What to do after `setup`, as text: the checks, then each extra chosen.
+
+    The dashboard's Integrations tab shows the same steps from setup_sections,
+    with copy buttons, for every extra.
+    """
     notifications = profile.get("notifications") or {}
+    sections = {section["id"]: section
+                for section in setup_sections(profile, profile_path, windows, db_path)}
     out = [
         "Next steps",
         "",
+        "Optional selections record your preferences. Connections and scheduled",
+        "runs are not verified or started by saving the profile.",
+        "",
         "Check the setup, then run your first report:",
-        f"       python sponsorscan.py doctor --profile {profile_path}",
-        f"       python sponsor_daily_report.py --profile {profile_path}",
+        *_block([command for step in sections["check"]["steps"] for command in step["commands"]]),
     ]
-
-    if notifications.get("email_enabled"):
-        out += [
-            "",
-            "Email alerts (full guide: docs/EMAIL_SETUP.md)",
-            "",
-            "Gmail does not accept your normal password from a script. It needs an",
-            "App Password: a separate 16-letter password that only SponsorScan uses.",
-            "",
-            "Before you start: open each link in a browser signed in to the Gmail",
-            "account that will SEND the alerts. Your profile picture at the top",
-            "right of each page shows which account is active; click it to switch.",
-            "",
-            "  1. Turn on 2-Step Verification",
-            "       https://myaccount.google.com/signinoptions/twosv",
-            "     - Google may ask for your password first.",
-            '     - If the page says "2-Step Verification is on", go to step 2.',
-            '     - Otherwise click "Turn on 2-Step Verification" and follow the',
-            "       prompts. Google asks for a phone number and texts it a code.",
-            "",
-            "  2. Create the App Password",
-            "       https://myaccount.google.com/apppasswords",
-            '     - In the "App name" box, type SponsorScan and click Create.',
-            '     - A box titled "Generated app password" shows 16 letters in',
-            "       four groups, like: abcd efgh ijkl mnop",
-            "     - Copy them now. Google never shows them again. If you lose",
-            "       them, delete this one on the same page and create another.",
-            "     - Click Done.",
-            '     - Seeing "The setting you are looking for is not available"?',
-            "       2-Step Verification is still off (go back to step 1), or this",
-            "       is a work or school account. Use a personal Gmail account.",
-            "",
-            "  3. Test the login. Paste the App Password when it is asked for; the",
-            "     spaces do not matter. It stays out of your command history, and",
-            '     nothing is sent yet. "Check passed. Nothing was sent." means it',
-            "     worked. Use your real addresses in place of the examples:",
-            *_block(_shell_lines([
-                ("GMAIL_ADDRESS", "you@gmail.com"),
-                ("GMAIL_APP_PASSWORD", None),
-                ("NOTIFICATION_EMAIL", "where-alerts-go@example.com"),
-            ], windows)),
-            "       python scripts/send_job_email.py --check",
-            "",
-            "  4. After a report, email the new jobs. Nothing is sent when there",
-            "     are none. Check your spam folder the first time.",
-            *_block(_shell_lines([("NEW_JOBS_CSV", outputs["new_matches"])], windows)),
-            "       python scripts/send_job_email.py",
-        ]
-
-    if notifications.get("google_sheets_enabled"):
-        out += [
-            "",
-            "Google Sheet (full guide: docs/GOOGLE_SHEETS_SETUP.md)",
-            "",
-            "SponsorScan writes to the sheet as a service account: a robot Google",
-            "account you create, then share the sheet with. It is free; no",
-            "billing account or credit card is needed.",
-            "",
-            "Before you start: use a personal Google account. Work and school",
-            "accounts often block step 5. Your profile picture at the top right",
-            "of each page shows which account is active; click it to switch.",
-            "",
-            "  1. Install the Google client libraries (in this terminal):",
-            "       pip install -r requirements-sheets.txt",
-            "",
-            "  2. Create a Google Cloud project",
-            "       https://console.cloud.google.com/projectcreate",
-            "     - First visit only: tick the Terms of Service box and click",
-            '       "Agree and continue".',
-            '     - "Project name": type SponsorScan. Leave "Location" as it is.',
-            "     - Click Create and wait about 30 seconds. The bell icon at the",
-            "       top right shows when it is ready.",
-            "",
-            "  3. Turn on the Google Sheets API",
-            "       https://console.cloud.google.com/apis/library/sheets.googleapis.com",
-            '     - Top left, next to "Google Cloud", the project picker must say',
-            "       SponsorScan. If not, click it and choose SponsorScan.",
-            "     - Click the blue Enable button. It worked when the page shows",
-            '       "API Enabled" or a Manage button instead.',
-            "",
-            "  4. Create the service account",
-            "       https://console.cloud.google.com/iam-admin/serviceaccounts",
-            "     - Check the project picker says SponsorScan again.",
-            '     - Click "+ Create service account" near the top.',
-            '     - "Service account name": type sponsorscan. The ID fills in',
-            "       by itself.",
-            '     - Click "Create and continue", then Continue on the',
-            '       "Permissions (optional)" step, then Done. No role is needed.',
-            "     - You are back at the list. The new row's Email column ends in",
-            "       .iam.gserviceaccount.com.",
-            "",
-            "  5. Download its key",
-            "     - In that list, click the service account's email address.",
-            "     - Click the Keys tab along the top of its page.",
-            '     - Click "Add key", then "Create new key". Leave JSON selected',
-            "       and click Create. A .json file lands in your Downloads folder.",
-            '     - Seeing "Service account key creation is disabled"? Your',
-            "       organization blocks keys. Start again with a personal account.",
-            "     Right after the download, this moves the newest .json file in",
-            "     Downloads into this folder as service-account.json:",
-            *_block([
-                'Get-ChildItem "$HOME\\Downloads\\*.json" | Sort-Object LastWriteTime'
-                ' | Select-Object -Last 1 | Move-Item -Destination service-account.json'
-                if windows else
-                'mv "$(ls -t ~/Downloads/*.json | head -1)" service-account.json']),
-            "     Git ignores that name. Never commit, share or paste its contents.",
-            "",
-            "  6. Create the spreadsheet",
-            "       https://sheets.new",
-            '     - A blank "Untitled spreadsheet" opens. Click that title at the',
-            "       top left to rename it, for example SponsorScan Jobs.",
-            "     - Copy the whole URL from the address bar. It looks like",
-            "       https://docs.google.com/spreadsheets/d/1AbC.../edit",
-            "",
-            "  7. Share it with the service account",
-            "     - Print the service account's address (in this terminal):",
-            *_block(["python -c \"import json;print(json.load(open("
-                     "'service-account.json'))['client_email'])\""]),
-            '     - In the spreadsheet, click the Share button at the top right.',
-            '     - Paste the address into the "Add people, groups" box.',
-            "     - The role dropdown beside it must say Editor, not Viewer.",
-            '     - Untick "Notify people"; the address has no inbox.',
-            "     - Click Share (or Send).",
-            "",
-            "  8. Test it. Paste the spreadsheet URL in place of the placeholder.",
-            '     "Check passed. Nothing was written." means it worked; anything',
-            "     else names the step to redo.",
-            *_block(_shell_lines([
-                ("GOOGLE_SERVICE_ACCOUNT_JSON", "service-account.json"),
-                ("GOOGLE_SPREADSHEET_ID", "<paste the spreadsheet URL>"),
-            ], windows)),
-            "       python scripts/update_google_sheet.py --check",
-            "",
-            "  9. After a report, copy the results in:",
-            *_block(_shell_lines([
-                ("ALL_MATCHES_CSV", outputs["all_matches"]),
-                ("NEW_JOBS_CSV", outputs["new_matches"]),
-            ], windows)),
-            "       python scripts/update_google_sheet.py",
-            "     Both tabs are replaced on every run, so keep your own notes,",
-            "     like an applied column, in a separate tab.",
-        ]
-
-    if notifications.get("email_enabled") or notifications.get("google_sheets_enabled"):
+    chosen = [key for key, flag in (("email", "email_enabled"), ("sheets", "google_sheets_enabled"))
+              if notifications.get(flag)]
+    for key in chosen:
+        out += _section_text(sections[key])
+    if chosen:
         out += [
             "",
             "These settings last only for this terminal window. To run every day",
@@ -750,9 +874,15 @@ def setup_guide(profile, profile_path, windows=False) -> str:
     else:
         out += [
             "",
-            "Email alerts and a Google Sheet are optional. Run setup again to add",
-            "them, or see docs/EMAIL_SETUP.md and docs/GOOGLE_SHEETS_SETUP.md.",
+            "Telegram alerts, email alerts and a Google Sheet are optional. See",
+            "docs/TELEGRAM_SETUP.md, docs/EMAIL_SETUP.md and docs/GOOGLE_SHEETS_SETUP.md,",
+            "or run setup again to add email or a sheet.",
         ]
+    out += [
+        "",
+        "The dashboard shows these steps with copy buttons: run",
+        "python sponsorscan.py dashboard and open Integrations.",
+    ]
     return "\n".join(out)
 
 

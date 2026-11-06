@@ -6,7 +6,7 @@
   <text x="72" y="100"
         text-anchor="start" dominant-baseline="central"
         font-family="'Helvetica Neue', Helvetica, Arial, 'Segoe UI', sans-serif"
-        font-size="60" font-weight="600" letter-spacing="-1" fill="#000000">sponsorscan</text>
+        font-size="60" font-weight="600" letter-spacing="-1" fill="#000000">sponsorscan.</text>
 
   <g fill="none" stroke="#000000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
     <rect x="1056" y="81" width="72" height="52" rx="7"/>

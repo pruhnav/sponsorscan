@@ -1,41 +1,81 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="sponsorscan" width="100%">
+  <img src="assets/readme-hero.svg" alt="sponsorscan. Find jobs at employers with H-1B history." width="100%">
 </p>
 
 <p align="center">
-  <img src="assets/job-boards.gif"
-       alt="Live postings from Greenhouse, Lever, Ashby, Workday, Eightfold and Amazon" width="100%"><br>
-  <picture>
-    <source media="(max-width: 700px)" srcset="assets/citizens-marquee-mobile.svg">
-    <img src="assets/citizens-marquee.svg"
-         alt="Also for U.S. citizens and green card holders" width="100%">
-  </picture>
+  <b>Current openings. Employer filing records. Your skills.</b><br>
+  Together in one report, built around your search. Free, open source, and it runs on your computer.
 </p>
 
-Finds entry-level postings at employers with real H-1B filing history, and drops
-the ones that disqualify you outright.
+<p align="center">
+  <a href="#install">Install</a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="#quickstart">Quickstart</a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="docs/DASHBOARD.md">Dashboard guide</a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="docs/REFERENCE.md">Reference</a>
+</p>
 
-It joins two sources that cannot go stale on someone else's schedule:
+## How it works
 
-- **DOL OFLC LCA disclosure data.** Quarterly, official, a legal filing
-  requirement. Free bulk download, no API key.
-- **Public ATS job board APIs** (Greenhouse, Lever, Ashby, Workday, Eightfold) and
-  Amazon's own job search. Served straight from the employer, no aggregator in between.
+SponsorScan joins two sources that cannot go stale on someone else's schedule:
+the Department of Labor's quarterly LCA disclosure data (official, free, no API
+key) and live postings served straight from employers' job boards. Then it
+filters and ranks the results against your profile.
 
-The core workflow is:
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <b>Check employer history</b><br>
+      <sub>Past H-1B filings from Department of Labor disclosures, with green card filings alongside.</sub><br><br>
+      <img src="assets/step-history.png" alt="Dashboard rows for Amazon, PayPal and Intel roles, each with the employer's H-1B and green card filing counts" width="100%">
+    </td>
+    <td width="33%" valign="top">
+      <b>Find current openings</b><br>
+      <sub>Senior titles and requirements that conflict with your settings are filtered out, with the reason shown.</sub><br><br>
+      <img src="assets/step-filter.png" alt="The dashboard's list of filtered-out jobs, with reasons such as U.S. citizenship required, 5+ years required and senior-level title" width="100%">
+    </td>
+    <td width="33%" valign="top">
+      <b>Rank for your profile</b><br>
+      <sub>Rate your skills and set your locations. Roles are ranked against them.</sub><br><br>
+      <img src="assets/step-profile.png" alt="The dashboard's profile step listing skills such as Python, Java, SQL and AWS with a familiarity rating for each" width="100%">
+    </td>
+  </tr>
+</table>
 
-1. Load the latest LCA disclosure data.
-2. Pull current postings from the job boards in `companies.yaml`.
-3. Filter and rank the results.
+Then, optionally, sync the results to Google Sheets, get new jobs by email or
+Telegram, and run the whole thing on a schedule through GitHub Actions.
 
-Then, optionally:
+## Where the jobs come from
 
-4. Generate a personalized report ranked against your own skills and eligibility.
-5. Sync it to Google Sheets and send new jobs by email or Telegram.
-6. Run the whole thing on a schedule through GitHub Actions.
+Public job boards on Greenhouse, Lever, Ashby, Workday and Eightfold, plus
+Amazon's own job search, with no aggregator in between. `companies.yaml` covers
+36 employers out of the box, including:
 
-`discover` also widens the company list automatically when you want broader
-coverage than the boards that ship in `companies.yaml`.
+<table>
+  <tr>
+    <td align="center" width="14%"><img src="assets/logos/stripe.svg" height="28" alt=""><br><sub>Stripe</sub></td>
+    <td align="center" width="14%"><img src="assets/logos/nvidia.svg" height="28" alt=""><br><sub>NVIDIA</sub></td>
+    <td align="center" width="14%"><img src="assets/logos/databricks.svg" height="28" alt=""><br><sub>Databricks</sub></td>
+    <td align="center" width="14%"><img src="assets/logos/airbnb.svg" height="28" alt=""><br><sub>Airbnb</sub></td>
+    <td align="center" width="14%"><img src="assets/logos/doordash.svg" height="28" alt=""><br><sub>DoorDash</sub></td>
+    <td align="center" width="14%"><img src="assets/logos/cloudflare.svg" height="28" alt=""><br><sub>Cloudflare</sub></td>
+    <td align="center" width="14%"><img src="assets/logos/netflix.svg" height="28" alt=""><br><sub>Netflix</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/logos/paypal.svg" height="28" alt=""><br><sub>PayPal</sub></td>
+    <td align="center"><img src="assets/logos/intel.svg" height="28" alt=""><br><sub>Intel</sub></td>
+    <td align="center"><img src="assets/logos/cisco.svg" height="28" alt=""><br><sub>Cisco</sub></td>
+    <td align="center"><img src="assets/logos/gitlab.svg" height="28" alt=""><br><sub>GitLab</sub></td>
+    <td align="center"><img src="assets/logos/instacart.svg" height="28" alt=""><br><sub>Instacart</sub></td>
+    <td align="center"><img src="assets/logos/linear.svg" height="28" alt=""><br><sub>Linear</sub></td>
+    <td align="center"><img src="assets/logos/mastercard.svg" height="28" alt=""><br><sub>Mastercard</sub></td>
+  </tr>
+</table>
+
+`discover` widens the list automatically when you want broader coverage, or add
+any company that posts on those boards to `companies.yaml`.
+
+**U.S. citizens and green card holders** can use it too: skip the filing-history
+step and use it to filter entry-level roles at the employers you care about.
 
 ## Local dashboard
 
@@ -259,6 +299,35 @@ Checks every stage and names the one that needs attention, instead of leaving
 you with an empty CSV and no explanation. Add `--profile profiles/yours.json`
 to validate a profile at the same time.
 
+## Extras
+
+Each one is optional and skips itself until it is set up.
+
+<table>
+  <tr>
+    <td width="25%" valign="top">
+      <img src="assets/logos/gmail.svg" height="24" alt=""><br>
+      <b><a href="docs/EMAIL_SETUP.md">Email alerts</a></b><br>
+      <sub>New matches sent from your own Gmail account.</sub>
+    </td>
+    <td width="25%" valign="top">
+      <img src="assets/logos/telegram.svg" height="24" alt=""><br>
+      <b><a href="docs/TELEGRAM_SETUP.md">Telegram alerts</a></b><br>
+      <sub>New matches as messages from your own Telegram bot.</sub>
+    </td>
+    <td width="25%" valign="top">
+      <img src="assets/logos/googlesheets.svg" height="24" alt=""><br>
+      <b><a href="docs/GOOGLE_SHEETS_SETUP.md">Google Sheets</a></b><br>
+      <sub>Both reports copied into a spreadsheet after each run.</sub>
+    </td>
+    <td width="25%" valign="top">
+      <img src="assets/logos/githubactions.svg" height="24" alt=""><br>
+      <b><a href="docs/REFERENCE.md#github-actions-automation">Run on a schedule</a></b><br>
+      <sub>GitHub Actions runs the report for you through the day.</sub>
+    </td>
+  </tr>
+</table>
+
 ## Where to go next
 
 | You want | Read |
@@ -267,13 +336,70 @@ to validate a profile at the same time.
 | A report ranked against the skills you list and your eligibility | [docs/REFERENCE.md](docs/REFERENCE.md#personalized-reporting) |
 | Setup for OPT or STEM OPT | [docs/OPT_SETUP.md](docs/OPT_SETUP.md) |
 | Setup for U.S. citizens | [docs/CITIZEN_SETUP.md](docs/CITIZEN_SETUP.md) |
-| Google Sheets sync | [docs/GOOGLE_SHEETS_SETUP.md](docs/GOOGLE_SHEETS_SETUP.md) |
-| Email notifications | [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) |
-| Telegram alerts | [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) |
-| Running it on a schedule, unattended | [docs/REFERENCE.md](docs/REFERENCE.md#github-actions-automation) |
+| The local dashboard, its backups and ports | [docs/DASHBOARD.md](docs/DASHBOARD.md) |
 | Help from an AI coding assistant | Open the repository in Claude Code, Codex, Cursor or Copilot and ask it to set things up. [AGENTS.md](AGENTS.md) tells it how. |
 
-Before trusting a run, read the
-[caveats](docs/REFERENCE.md#caveats-read-these). An LCA filing is evidence of
-prior willingness to sponsor, not a job offer, and employer name matching is
-imperfect.
+## Before you run it
+
+<details open>
+<summary><b>Does filing history mean an employer will sponsor me?</b></summary><br>
+
+No. Filings record what an employer did in the past, not a promise for a
+particular role or applicant, and employer name matching can be imperfect. Use
+them to decide where to look first: an employer with recent filings, many of
+them for new hires, is a better bet than one with a single old filing. Confirm
+with the employer before you rely on it, and read the
+[caveats](docs/REFERENCE.md#caveats-read-these).
+
+</details>
+
+<details>
+<summary><b>What do the H-1B numbers count?</b></summary><br>
+
+Certified Labor Condition Applications from the Department of Labor, the step an
+employer completes before filing an H-1B petition. A certified filing is not an
+approved visa, and one filing can cover more than one worker. SponsorScan also
+counts how many were for new hires rather than extensions. Stripe, LLC, for
+example, had 319 certified filings from FY2025 Q4 to FY2026 Q3, and 123 of them
+were for new hires.
+
+</details>
+
+<details>
+<summary><b>Does anything leave my computer?</b></summary><br>
+
+There is no account and no SponsorScan server. It runs on your computer and goes
+online only to fetch jobs, filing data and company logos. Your profile and
+applications stay in local files. If you turn on email, Telegram, Google Sheets
+or the GitHub Actions schedule, your results go only to the accounts you set up.
+
+</details>
+
+<details>
+<summary><b>I'm a citizen or green card holder. Is it useful for me?</b></summary><br>
+
+Yes. Skip the filing-history step and use it to filter entry-level roles at the
+employers you care about. The [citizen guide](docs/CITIZEN_SETUP.md) covers the
+setup.
+
+</details>
+
+<details>
+<summary><b>Is it free?</b></summary><br>
+
+Yes. SponsorScan is open source under the MIT license and uses public data, with
+no API keys or paid services required.
+
+</details>
+
+<br>
+
+<p align="center">
+  <img src="assets/readme-footer.svg" alt="SponsorScan is free and open source, and runs on your computer." width="100%">
+</p>
+
+<p align="center">
+  Built by <a href="https://github.com/pruhnav">Pranav Balachander</a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="https://www.linkedin.com/in/pranavbalachander2/">LinkedIn</a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="LICENSE">MIT license</a>
+</p>

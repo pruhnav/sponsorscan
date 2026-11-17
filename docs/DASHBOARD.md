@@ -40,8 +40,9 @@ On Windows, you can also run the virtual environment's interpreter directly:
    history, then save it or open the employer's posting.
 4. In **Applications**, record statuses and notes. **Add application** lets you
    track a role found elsewhere, even if it is not in SponsorScan's feed.
-5. Optional: open **Integrations** to set up Telegram, email, Google Sheets or a
-   schedule. Each card gives the steps and copyable terminal commands.
+5. Optional: open **Integrations**, in the menu under your name at the top
+   right, to set up Telegram, email, Google Sheets or a schedule. Each card
+   gives the steps and copyable terminal commands.
 
 Statuses are manual. Opening a posting does not submit an application or mark
 it as applied. There is no resume scanner or automatic application submission
@@ -67,10 +68,16 @@ in this version. Profile fit is a weighted ranking heuristic, not an ATS score.
     skills in the posting 5/42. The parts come from the same scoring as the
     report, so they always add up to the total. Below them is a list of the
     skills the posting asks for that your profile does not have.
+  - **Why this job matched**: the ranking score as one bar split into profile
+    fit, sponsorship, career level and company, with your profile's cutoff
+    marked. Hover over or tab to a part for its points. Below the bar, the
+    report's reasons appear as labeled chips, such as Internship or Has filed
+    for similar titles, and anything worth checking, such as an unclear
+    location, appears in amber.
   - **Sponsorship history**: H-1B filings by year, green card (PERM) filings,
     the share of filings for client sites and for new hires, and the DOL
     employer name the company was matched to.
-  - **Why this job matched**, and your application status and notes.
+  - Your application status and notes.
 - After you open a posting and come back to the dashboard, it asks **Did you
   apply?** Yes marks the role as applied. Not yet leaves it as it was.
 - A built match list is reused for 15 minutes. Fetching jobs or editing your
@@ -83,7 +90,8 @@ Remove asks for a second click before it deletes a record.
 
 ### Integrations
 
-One card per extra: Telegram, Gmail alerts, Google Sheets and a GitHub Actions
+Open it from the menu under your name at the top right, where Profile also
+lives. One card per extra: Telegram, Gmail alerts, Google Sheets and a GitHub Actions
 schedule, then a final card that checks your profile and data and runs a
 report. Each card has
 numbered steps, buttons that open the right pages, and commands with a Copy
@@ -95,9 +103,9 @@ into hidden prompts there, and the dashboard never sees them.
 
 ### Theme
 
-The sun, moon and monitor buttons at the top right switch between light, dark
-and your system setting. The dashboard follows the system setting until you
-choose, then remembers your choice.
+Open the menu under your name at the top right and choose Light, Dark or System.
+The dashboard follows the system setting until you choose, then remembers your
+choice.
 
 ## Company logos
 

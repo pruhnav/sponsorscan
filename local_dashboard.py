@@ -908,7 +908,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 assets = {"/": "index.html", "/index.html": "index.html",
                           "/app.js": "app.js", "/theme.js": "theme.js",
                           "/style.css": "style.css",
-                          "/hanken-grotesk.ttf": "hanken-grotesk.ttf"}
+                          "/hanken-grotesk.ttf": "hanken-grotesk.ttf",
+                          "/sky-light.jpg": "sky-light.jpg", "/sky-dark.jpg": "sky-dark.jpg"}
                 filename = assets.get(path)
                 if not filename:
                     self.send(404, {"error": "Not found."})

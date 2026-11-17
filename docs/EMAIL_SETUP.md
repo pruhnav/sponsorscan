@@ -71,7 +71,7 @@ Skip this section unless SponsorScan will run on a schedule through GitHub
 Actions.
 
 Use your own copy of the repository on GitHub, the one the workflow runs in,
-not `pruhnav/sponsorscan`. **Settings** is the last tab along the top of the
+not `sponsorscan/sponsorscan`. **Settings** is the last tab along the top of the
 repository page; on a narrow window it is under the `...` menu at the end of
 the tabs. Only the repository's owner sees it. From there, open:
 

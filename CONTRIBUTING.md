@@ -16,7 +16,7 @@ welcome.
 ## Development setup
 
 ```bash
-git clone https://github.com/pruhnav/sponsorscan.git
+git clone https://github.com/sponsorscan/sponsorscan.git
 cd sponsorscan
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1

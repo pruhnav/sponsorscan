@@ -619,7 +619,7 @@ def _store_quarters(quarters, source, replace, kind="lca"):
 # seconds. A pointer file names the data file and its SHA-256, so a truncated
 # or altered download is refused before anything changes.
 
-PREBUILT_LCA_URL = ("https://github.com/pruhnav/sponsorscan/releases/download/"
+PREBUILT_LCA_URL = ("https://github.com/sponsorscan/sponsorscan/releases/download/"
                     "lca-latest/lca.json")
 
 

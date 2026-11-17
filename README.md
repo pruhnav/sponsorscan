@@ -148,7 +148,7 @@ Then clone the repository and create a virtual environment.
 ### Windows PowerShell
 
 ```powershell
-git clone https://github.com/pruhnav/sponsorscan.git
+git clone https://github.com/sponsorscan/sponsorscan.git
 cd sponsorscan
 
 python -m venv .venv
@@ -175,7 +175,7 @@ is active, the prompt starts with `(.venv)`.
 ### macOS and Linux
 
 ```bash
-git clone https://github.com/pruhnav/sponsorscan.git
+git clone https://github.com/sponsorscan/sponsorscan.git
 cd sponsorscan
 
 python3 -m venv .venv

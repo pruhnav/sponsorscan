@@ -1,23 +1,28 @@
 @font-face { font-family: 'Hanken Grotesk'; src: url('/hanken-grotesk.ttf') format('truetype'); font-weight: 100 900; font-display: swap; }
 
-/* Three depths: the gray page, white cards resting on it, and menus and dialogs
-   floating above both. Color is reserved for company logos. */
+/* Three depths, as on the website: a near-white page, white cards with a hairline edge
+   resting on it, and menus and dialogs floating above both. Cards that can be opened lift
+   on hover, and an open or selected card takes the blue wash. Color is otherwise reserved
+   for company logos and filing evidence. */
 :root {
-  --ink: #0f0f0f; --text: #262626; --muted: #666; --soft: #8c8c8c;
-  --page: #f3f3f3; --surface: #fff; --sunken: #f7f7f7; --hover: #f2f2f2;
-  --line: #e8e8e8; --line-strong: #d4d4d4;
+  --ink: #171717; --text: #262626; --muted: #626262; --soft: #8c8c8c;
+  --page: #fcfcfc; --surface: #fff; --sunken: #f6f6f6; --hover: #f2f2f2;
+  --line: #e6e6e6; --line-strong: #d4d4d4;
   --ring: 0 0 0 1px rgb(0 0 0 / .07);
-  --shadow-1: 0 0 0 1px rgb(0 0 0 / .055), 0 1px 2px rgb(0 0 0 / .05), 0 3px 8px rgb(0 0 0 / .03);
-  --shadow-2: 0 0 0 1px rgb(0 0 0 / .06), 0 4px 10px rgb(0 0 0 / .06), 0 14px 32px rgb(0 0 0 / .08);
+  --shadow-1: 0 0 0 1px #dedede, 0 1px 3px rgb(0 0 0 / .03), 0 8px 24px rgb(0 0 0 / .025);
+  --shadow-2: 0 0 0 1px #d6d6d6, 0 2px 5px rgb(0 0 0 / .04), 0 20px 50px rgb(0 0 0 / .07);
   --shadow-3: 0 0 0 1px rgb(0 0 0 / .07), 0 12px 28px rgb(0 0 0 / .14), 0 32px 72px rgb(0 0 0 / .16);
-  --radius: 12px; --radius-sm: 8px;
+  --wash: linear-gradient(170deg, #fff 30%, #f1f5ff 70%, #e6edff);
+  --wash-edge: 0 0 0 1px #d5dbe8, 0 2px 5px rgb(0 0 0 / .04), 0 20px 50px rgb(0 0 0 / .07);
+  --lift: translateY(-2px);
+  --radius: 12px; --radius-sm: 7px;
   /* One accent for sponsorship evidence. Swap the hue to retheme it. */
   --accent-hue: 262;
   --accent: oklch(53% .2 var(--accent-hue)); --accent-strong: oklch(45% .19 var(--accent-hue)); --accent-on: #fff;
   --accent-soft: oklch(96.5% .025 var(--accent-hue)); --accent-line: oklch(89% .05 var(--accent-hue));
   --ease: cubic-bezier(.2, .7, .2, 1);
   --surface-raised: #fff; --track: #ebebeb; --backdrop: rgb(15 15 15 / .38);
-  --btn-bg: #0f0f0f; --btn-fg: #fff; --btn-hover: #2b2b2b; --toast-bg: #0f0f0f; --toast-fg: #fff;
+  --btn-bg: #171717; --btn-fg: #fff; --btn-hover: #333; --toast-bg: #171717; --toast-fg: #fff;
   /* Lightness and chroma for tinted tiles and badges; each sets its own --hue. */
   --success: oklch(56% .16 150);
   --tile-bg: 95.5% .035; --tile-fg: 40% .11; --tile-line: 88% .05;
@@ -35,6 +40,8 @@
   --shadow-1: 0 0 0 1px rgb(255 255 255 / .065), 0 1px 2px rgb(0 0 0 / .5);
   --shadow-2: 0 0 0 1px rgb(255 255 255 / .1), 0 6px 16px rgb(0 0 0 / .45), 0 16px 40px rgb(0 0 0 / .35);
   --shadow-3: 0 0 0 1px rgb(255 255 255 / .1), 0 16px 40px rgb(0 0 0 / .55), 0 32px 80px rgb(0 0 0 / .45);
+  --wash: linear-gradient(170deg, var(--surface) 30%, oklch(21% .03 262) 72%, oklch(25% .055 262));
+  --wash-edge: 0 0 0 1px oklch(36% .07 262), 0 6px 16px rgb(0 0 0 / .45), 0 16px 40px rgb(0 0 0 / .35);
   --btn-bg: #f4f4f5; --btn-fg: #0c0c0e; --btn-hover: #d9d9dd; --toast-bg: #f4f4f5; --toast-fg: #0c0c0e;
   --accent: oklch(68% .17 var(--accent-hue)); --accent-strong: oklch(72% .15 var(--accent-hue)); --accent-on: #0a0f1f;
   --accent-soft: oklch(23% .045 var(--accent-hue)); --accent-line: oklch(34% .07 var(--accent-hue));
@@ -43,6 +50,18 @@
 }
 :root[data-theme=dark] select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239d9da3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E"); }
 * { box-sizing: border-box; }
+/* Slim scrollbars: a rounded handle on a clear track, no arrows. Chrome and Safari take
+   the ::-webkit rules; Firefox, which lacks them, takes scrollbar-width and -color. */
+:root { --scroll-thumb: rgb(0 0 0 / .2); --scroll-thumb-hover: rgb(0 0 0 / .34); }
+:root[data-theme=dark] { --scroll-thumb: rgb(255 255 255 / .18); --scroll-thumb-hover: rgb(255 255 255 / .3); }
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; } }
+::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--scroll-thumb) padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-thumb-hover); }
+/* Inside a dialog, keep the handle clear of the rounded corners. */
+dialog::-webkit-scrollbar-track { margin-block: 14px; }
 body { margin: 0; display: flex; flex-direction: column; min-height: 100vh; background: var(--page); }
 [hidden] { display: none!important; }
 a { color: inherit; text-decoration: none; }
@@ -57,48 +76,73 @@ h1, h2, h3 { color: var(--ink); }
 .nav-icon { width: 18px; height: 18px; }
 
 /* Shell */
-/* One bar holds the brand, the three pages, and the clock and theme switch. */
-.appbar { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
-.appbar-inner { display: flex; align-items: center; gap: 24px; height: 60px; max-width: 1280px; margin: 0 auto; padding: 0 40px; }
-.brand { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; font-size: 20px; letter-spacing: -.045em; font-weight: 650; color: var(--ink); padding: 4px 6px; margin-left: -6px; border-radius: var(--radius-sm); }
+/* The sky runs edge to edge behind the bar, the page heading and, on Matches, the three
+   summary boxes. app.js sets --sky-height so it ends just below them; the last stretch
+   fades into the page instead of stopping at an edge. */
+body { position: relative; isolation: isolate; }
+body::before { content: ''; position: absolute; z-index: -1; top: 0; right: 0; left: 0; height: var(--sky-height, 360px); background: var(--sky); transition: height .45s var(--ease);
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 90px), transparent); mask-image: linear-gradient(#000 calc(100% - 90px), transparent); }
+/* Both skies were made for this banner: calm sky over the heading and the horizon at
+   70%, which this crop puts just behind the summary boxes. The pale morning sky takes
+   dark text; the dusk is dimmed slightly so its light text clears the warm horizon. */
+:root { --sky: url('/sky-light.jpg') center 71% / cover; --bar-line: rgb(23 23 23 / .1); --bar-hover: rgb(255 255 255 / .4); }
+:root[data-theme=dark] { --sky: linear-gradient(rgb(4 8 22 / .2), rgb(4 8 22 / .32)), url('/sky-dark.jpg') center 71% / cover; --bar-line: rgb(255 255 255 / .12); --bar-hover: rgb(255 255 255 / .08); }
+
+/* The bar sits on the sky like the website's header: no background of its own, a
+   hairline below, and it scrolls away with the page. */
+.appbar { position: relative; z-index: 5; }
+.appbar-inner { display: flex; align-items: stretch; gap: 34px; height: 68px; max-width: 1280px; margin: 0 auto; padding: 0 40px; }
+.appbar-inner::after { content: ''; position: absolute; right: max(40px, calc(50% - 600px)); bottom: 0; left: max(40px, calc(50% - 600px)); height: 1px; background: var(--bar-line); }
+.brand { align-self: center; display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; font-size: 20px; letter-spacing: -.045em; font-weight: 650; color: var(--ink); padding: 4px 6px; margin-left: -6px; border-radius: var(--radius-sm); }
 .brand-icon { width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-nav { display: flex; gap: 2px; }
-nav a { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 14px; font-weight: 500; padding: 7px 11px; border-radius: var(--radius-sm); color: var(--muted); transition: background .15s, color .15s; }
-nav a:hover { background: var(--hover); color: var(--ink); }
-nav a[aria-current=page] { background: var(--hover); color: var(--ink); font-weight: 600; }
-nav a[aria-current=page] .nav-icon { stroke-width: 2; }
-nav .count { min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 20px; text-align: center; color: var(--muted); background: var(--sunken); box-shadow: var(--ring); }
-nav a[aria-current=page] .count { background: var(--accent-strong); color: var(--accent-on); box-shadow: none; }
-.appbar-end { display: flex; align-items: center; gap: 14px; min-width: 0; margin-left: auto; }
-#profile-label { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clock { padding-left: 14px; border-left: 1px solid var(--line); font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+nav { display: flex; gap: 26px; }
+/* The current page is marked by a line on the bar's bottom edge. */
+nav a { position: relative; display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 14px; font-weight: 500; color: var(--text); transition: color .2s; }
+nav a:hover, nav a[aria-current=page] { color: var(--ink); }
+nav a[aria-current=page]::after { content: ''; position: absolute; right: 0; bottom: 0; left: 0; z-index: 1; height: 2px; border-radius: 2px; background: var(--ink); }
+/* Counts are plain numbers, hidden while they are zero (app.js leaves them empty). */
+nav .count { font-size: 12px; font-weight: 500; color: var(--muted); }
+nav .count:empty { display: none; }
+.appbar-end { align-self: center; display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: auto; }
 .connection { color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
 .connection.connected { display: none; }
-/* The switch shows only the current theme and opens leftward on hover or focus.
-   The current choice is always last, so it stays under the pointer. */
-.theme-slot { position: relative; flex-shrink: 0; width: 34px; height: 32px; }
-.theme-switch { position: absolute; top: 0; right: 0; z-index: 2; display: inline-flex; padding: 3px; border-radius: 9px; background: var(--sunken); box-shadow: var(--ring); transition: background .18s, box-shadow .18s; }
-.theme-switch button { display: grid; place-items: center; width: 28px; height: 26px; overflow: hidden; border: 0; border-radius: 6px; background: none; color: var(--muted); transition: width .2s var(--ease), opacity .15s, background .15s, color .15s; }
-.theme-switch button:not([aria-pressed=true]) { width: 0; opacity: 0; }
-.theme-switch:is(:hover, :focus-within):not(.settled) { background: var(--surface-raised); box-shadow: var(--shadow-2); }
-.theme-switch:is(:hover, :focus-within):not(.settled) button { width: 28px; opacity: 1; }
-.theme-switch button:hover { color: var(--ink); }
-.theme-switch button[aria-pressed=true] { color: var(--ink); background: var(--surface-raised); box-shadow: var(--shadow-1); }
+/* Account: the profile's initial and first name, opening Profile, Integrations and the theme. */
+.account-button { display: inline-flex; align-items: center; gap: 9px; min-width: 0; padding: 4px 10px 4px 4px; border: 0; border-radius: 999px; background: none; color: var(--ink); font-size: 14px; font-weight: 500; transition: background .2s; }
+.account-button:hover, .account-button[aria-expanded=true] { background: var(--bar-hover); }
+.account-button .icon { width: 14px; height: 14px; color: var(--muted); transition: rotate .25s var(--ease); }
+.account-button[aria-expanded=true] .icon { rotate: 180deg; }
+#profile-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.avatar { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; font-size: 14px; font-weight: 600; color: #fff; background: linear-gradient(160deg, oklch(66% .14 245), oklch(48% .17 262)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .35), 0 1px 2px rgb(16 38 72 / .25); }
+.avatar:empty::before { content: '+'; font-size: 17px; font-weight: 500; }
+/* On Profile and Integrations, which live in this menu, the initial gets a ring. */
+.account-button.current .avatar { box-shadow: 0 0 0 2px var(--bar-hover), 0 0 0 3.5px var(--ink); }
+.account-menu { position: fixed; inset: auto; margin: 0; width: 240px; padding: 6px; border: 0; border-radius: 14px; color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-3); }
+.account-menu:popover-open { display: grid; gap: 2px; animation: menu-in .16s var(--ease); }
+.account-menu a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; font-size: 14px; font-weight: 500; color: var(--ink); }
+.account-menu a .icon { color: var(--muted); }
+.account-menu a:hover { background: var(--hover); }
+.account-menu a[aria-current=page] { background: var(--hover); font-weight: 600; }
+.theme-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 4px; padding: 8px 2px 2px; border-top: 1px solid var(--line); }
+.theme-choices button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px; border: 0; border-radius: 9px; background: none; font-size: 12px; font-weight: 500; color: var(--muted); transition: background .2s, color .2s; }
+.theme-choices button:hover { color: var(--ink); background: var(--hover); }
+.theme-choices button[aria-pressed=true] { color: var(--ink); background: var(--sunken); box-shadow: var(--shadow-1); }
 main { flex: 1; min-width: 0; }
 .app-footer { border-top: 1px solid var(--line); background: var(--surface); }
 .app-footer-inner { display: flex; align-items: flex-start; gap: 10px; max-width: 1280px; margin: 0 auto; padding: 18px 40px; color: var(--muted); }
 .app-footer p { margin: 0; font-size: 13px; line-height: 1.6; }
 .app-footer strong { font-weight: 600; color: var(--text); }
 .app-footer .icon { margin-top: 2px; }
-.content { padding: 32px 40px 56px; max-width: 1280px; margin: 0 auto; }
+.content { padding: 40px 40px 56px; max-width: 1280px; margin: 0 auto; }
 
 /* Headings and actions */
-.page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 24px; }
-h1 { font-size: 30px; font-weight: 650; line-height: 1.15; letter-spacing: -.03em; margin: 0 0 8px; }
-.page-heading p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0; max-width: 640px; }
+/* The heading sits on the sky (see fitSky in app.js for where the sky ends). */
+.page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 28px; }
+/* Headings follow the website: medium weight, large and tightly tracked. */
+h1 { font-size: 40px; font-weight: 500; line-height: 1.1; letter-spacing: -.045em; margin: 0 0 10px; }
+.page-heading p { color: var(--text); font-size: 14px; line-height: 1.6; margin: 0; max-width: 640px; }
 .data-status .text-button { font-size: 14px; padding: 0; }
 .heading-actions { display: flex; flex-shrink: 0; gap: 8px; }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 15px; border: 0; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--btn-fg); background: var(--btn-bg); box-shadow: 0 1px 2px rgb(0 0 0 / .25), inset 0 1px 0 rgb(255 255 255 / .1); transition: background .15s, box-shadow .15s, transform .1s; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 17px; border: 0; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--btn-fg); background: var(--btn-bg); box-shadow: 0 1px 2px rgb(0 0 0 / .2); transition: background .15s, box-shadow .15s, transform .1s; }
 .button:hover { background: var(--btn-hover); }
 .button:active { transform: translateY(1px); }
 .button.secondary { color: var(--text); background: var(--surface); box-shadow: var(--shadow-1); }
@@ -130,7 +174,7 @@ h1 { font-size: 30px; font-weight: 650; line-height: 1.15; letter-spacing: -.03e
 .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
 .stat { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-1); }
 .stat span { font-size: 13px; color: var(--muted); }
-.stat strong { font-size: 24px; line-height: 1; font-weight: 650; letter-spacing: -.03em; color: var(--ink); }
+.stat strong { font-size: 30px; line-height: 1; font-weight: 500; letter-spacing: -.045em; color: var(--ink); }
 
 /* Toolbar and menus */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
@@ -166,9 +210,9 @@ input::placeholder, textarea::placeholder { color: var(--soft); }
 .list-head { display: grid; grid-template-columns: var(--cols); gap: 16px; align-items: center; padding: 11px 20px; font-size: 12px; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line); }
 .list-head:empty { display: none; }
 .jobs-list { padding: 4px 0; }
-.job-row { position: relative; display: grid; grid-template-columns: var(--cols); gap: 16px; align-items: center; margin: 0 6px; padding: 13px 14px; border-radius: 10px; transition: box-shadow .16s var(--ease), background .16s; }
+.job-row { position: relative; display: grid; grid-template-columns: var(--cols); gap: 16px; align-items: center; margin: 0 6px; padding: 13px 14px; border-radius: 10px; transition: box-shadow .2s var(--ease), background .2s, transform .2s var(--ease); }
 .job-row + .job-row::before { content: ''; position: absolute; top: 0; left: 14px; right: 14px; height: 1px; background: var(--line); }
-.job-row:hover { z-index: 1; background: var(--surface-raised); box-shadow: var(--shadow-2); }
+.job-row:hover { z-index: 1; background: var(--surface-raised); box-shadow: var(--shadow-2); transform: translateY(-1px); }
 .job-row:hover::before, .job-row:hover + .job-row::before { display: none; }
 .job-row:focus-within { z-index: 1; }
 .job-stats { display: contents; }
@@ -177,7 +221,7 @@ input::placeholder, textarea::placeholder { color: var(--soft); }
   --hue: 250; color: oklch(var(--tile-fg) var(--hue)); background: oklch(var(--tile-bg) var(--hue)); box-shadow: inset 0 0 0 1px oklch(var(--tile-line) var(--hue)), 0 1px 2px rgb(0 0 0 / .05); }
 .logo-lg { width: 52px; height: 52px; border-radius: 13px; font-size: 21px; }
 .job-main { min-width: 0; }
-.job-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; text-align: left; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.job-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; text-align: left; font-size: 15px; font-weight: 550; line-height: 1.4; letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; }
 .job-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
 .job-open:focus-visible { outline: none; }
 .job-open:focus-visible::after { outline: 2px solid var(--ink); outline-offset: -2px; }
@@ -207,7 +251,7 @@ input::placeholder, textarea::placeholder { color: var(--soft); }
 .status-badge.applied { --hue: 255; } .status-badge.interview { --hue: 70; } .status-badge.offer { --hue: 150; } .status-badge.rejected { --hue: 25; }
 .show-more { display: block; margin: 6px auto 8px; }
 .empty { padding: 56px 20px; text-align: center; }
-.empty h2 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 8px; }
+.empty h2 { font-size: 22px; font-weight: 500; letter-spacing: -.035em; margin: 0 0 8px; }
 .empty p { max-width: 470px; margin: 0 auto; color: var(--muted); font-size: 14px; line-height: 1.7; }
 .footnote { font-size: 12px; line-height: 1.7; color: var(--muted); margin: 20px 0 0; }
 
@@ -215,23 +259,33 @@ input::placeholder, textarea::placeholder { color: var(--soft); }
 details { font-size: 13px; }
 summary { cursor: pointer; }
 .exclusions { margin-top: 16px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-1); }
+/* Panels that open (this one and the integration cards) lift on hover and take the blue
+   wash while open. The wash sits on a pseudo-element so it can fade in, because a gradient
+   can't transition. app.js adds .is-closing while a panel slides shut, so it settles back
+   down as it collapses, and .is-sliding to clip its contents during the slide. */
+.slide { position: relative; isolation: isolate; transition: box-shadow .35s var(--ease), transform .35s var(--ease); }
+.slide::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--wash); opacity: 0; pointer-events: none; transition: opacity .35s ease; }
+.slide:not([open]):hover { box-shadow: var(--shadow-2); transform: var(--lift); }
+.slide[open]:not(.is-closing) { box-shadow: var(--wash-edge); }
+.slide[open]:not(.is-closing)::before { opacity: 1; }
+.slide.is-sliding { overflow: clip; }
 .exclusions summary { display: flex; align-items: center; gap: 8px; padding: 14px 16px; font-weight: 500; list-style: none; }
 .exclusions summary::-webkit-details-marker { display: none; }
-.exclusions summary .icon { rotate: -90deg; color: var(--muted); transition: rotate .15s var(--ease); }
-.exclusions[open] summary .icon { rotate: 0deg; }
+.exclusions summary .icon { rotate: -90deg; color: var(--muted); transition: rotate .3s var(--ease); }
+.exclusions[open]:not(.is-closing) summary .icon { rotate: 0deg; }
 .exclusions > p, #excluded-list { margin: 0; padding: 0 16px 14px 40px; color: var(--muted); line-height: 1.7; }
 .excluded-row { padding: 10px 0; border-top: 1px solid var(--line); line-height: 1.6; color: var(--text); }
 .excluded-row span { color: var(--muted); display: block; }
 .excluded-more { color: var(--muted); }
 
 /* Dialogs */
-dialog { position: fixed; width: min(700px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow: auto; padding: 0; border: 0; border-radius: 16px; color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-3); }
+dialog { position: fixed; width: min(700px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow: hidden auto; padding: 0; border: 0; border-radius: 16px; color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-3); }
 dialog[open] { animation: dialog-in .2s var(--ease); }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(.985); } }
 dialog::backdrop { background: var(--backdrop); }
 .dialog-body { position: relative; padding: 30px 32px; }
 .close { position: absolute; top: 14px; right: 14px; }
-dialog h2 { font-size: 24px; line-height: 1.25; font-weight: 650; letter-spacing: -.025em; margin: 0 0 8px; padding-right: 36px; }
+dialog h2 { font-size: 26px; line-height: 1.2; font-weight: 500; letter-spacing: -.035em; margin: 0 0 8px; padding-right: 36px; }
 dialog h3 { font-size: 15px; font-weight: 650; margin: 0 0 12px; }
 .muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .detail-head { position: relative; display: flex; gap: 16px; padding: 28px 32px 0; }
@@ -241,7 +295,7 @@ dialog h3 { font-size: 15px; font-weight: 650; margin: 0 0 12px; }
 .detail-facts > span:empty { display: none; }
 .detail-facts > span + span::before { content: ''; display: inline-block; width: 1px; height: 11px; margin: 0 9px; vertical-align: -1px; background: var(--line-strong); }
 .detail-actions { display: flex; gap: 10px; padding: 18px 32px 24px 100px; }
-.evidence { margin: 0 32px; padding: 20px; border-radius: var(--radius); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.evidence { margin: 0 32px; padding: 20px; border-radius: var(--radius); background: var(--wash); box-shadow: inset 0 0 0 1px var(--accent-line); }
 .evidence-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; margin-bottom: 14px; }
 .evidence-head h3 { margin: 0; }
 .evidence-head p { margin: 0; }
@@ -254,14 +308,50 @@ dialog h3 { font-size: 15px; font-weight: 650; margin: 0 0 12px; }
 .evidence-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px 18px; margin: 18px 0 0; }
 .evidence-stats div { min-width: 0; }
 .evidence-stats dt { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
-.evidence-stats dd { margin: 0; font-size: 17px; font-weight: 650; color: var(--ink); letter-spacing: -.01em; }
+.evidence-stats dd { margin: 0; font-size: 20px; font-weight: 500; color: var(--ink); letter-spacing: -.035em; }
 .evidence-stats dd small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
 .evidence-note { margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
 .detail-section { margin: 0 32px; padding: 22px 0; }
 .detail-section + .detail-section { border-top: 1px solid var(--line); }
-.reasons { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.reasons li { position: relative; padding-left: 18px; font-size: 14px; line-height: 1.5; }
-.reasons li::before { content: ''; position: absolute; left: 3px; top: .62em; width: 6px; height: 6px; border-radius: 2px; background: var(--soft); }
+/* Why this job matched: the ranking score as one tall segmented bar (each part its own
+   block, 2px apart, its points printed at the leading edge when they fit), the cutoff
+   as a marker, a legend naming the parts, then the reasons as chips. The four colors
+   are a validated categorical set (dataviz palette slots 1 to 4), stepped for dark. */
+:root { --rank-1: #2a78d6; --rank-2: #eb6834; --rank-3: #1baf7a; --rank-4: #eda100;
+  --caution: oklch(56% .14 65); --caution-bg: oklch(97.5% .03 85); --caution-line: oklch(88% .07 85); }
+:root[data-theme=dark] { --rank-1: #3987e5; --rank-2: #d95926; --rank-3: #199e70; --rank-4: #c98500;
+  --caution: oklch(80% .14 80); --caution-bg: oklch(25% .04 75); --caution-line: oklch(37% .07 75); }
+.rank { margin-bottom: 20px; }
+.rank-track { position: relative; display: flex; gap: 2px; height: 28px; margin-top: 30px; }
+.rank-part { position: relative; display: flex; align-items: center; min-width: 4px; padding-left: 9px; border-radius: 4px; font-size: 12px; font-weight: 600; color: #fff; cursor: default; }
+.rank-part.narrow { padding-left: 0; }
+.rank-part.narrow .rank-value { display: none; }
+.slot-1 { background: var(--rank-1); } .slot-2 { background: var(--rank-2); } .slot-3 { background: var(--rank-3); } .slot-4 { background: var(--rank-4); }
+:root:not([data-theme=dark]) .rank-part.slot-4 { color: #0b0b0b; }
+/* Hover or keyboard focus names a part with its points and share. Even hidden, the label
+   takes up room, so it opens from the block's edge nearest the bar's middle (app.js
+   adds .tip-end to blocks in the right half) and never reaches past the bar. */
+.rank-part::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 3; padding: 6px 9px; border-radius: 7px; font-size: 12px; font-weight: 500; white-space: nowrap; color: var(--toast-fg); background: var(--toast-bg); box-shadow: var(--shadow-2); opacity: 0; translate: 0 4px; pointer-events: none; transition: opacity .15s, translate .15s var(--ease); }
+.rank-part.tip-end::after { right: 0; left: auto; }
+.rank-part:is(:hover, :focus-visible)::after { opacity: 1; translate: 0 0; }
+.rank-cutoff { position: absolute; top: -6px; bottom: -6px; z-index: 2; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface-raised); pointer-events: none; }
+.rank-cutoff-label { position: absolute; bottom: calc(100% + 4px); left: 50%; translate: -50% 0; font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.rank-cutoff.end .rank-cutoff-label { right: 0; left: auto; translate: 0 0; }
+.rank-cutoff.start .rank-cutoff-label { left: 0; translate: 0 0; }
+.rank-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.rank-legend li { display: inline-flex; align-items: center; gap: 7px; }
+.rank-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.rank-legend b { font-weight: 600; color: var(--text); }
+.signals { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.signals:empty { display: none; }
+.signals + .signals { margin-top: 8px; }
+.signal { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; border-radius: 999px; font-size: 13px; font-weight: 500; line-height: 1.3; color: var(--text); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line); }
+.signal .icon { color: var(--accent-strong); }
+.cautions .signal { background: var(--caution-bg); box-shadow: inset 0 0 0 1px var(--caution-line); }
+.cautions .signal .icon { color: var(--caution); }
+.tier-dots { display: inline-flex; gap: 3px; margin-left: 1px; }
+.tier-dots i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.25px var(--accent-strong); }
+.tier-dots i.on { background: var(--accent-strong); }
 .application-form { padding-bottom: 28px; }
 .application-form .field { display: grid; gap: 7px; margin-bottom: 18px; }
 .field-label { font-size: 13px; font-weight: 600; }
@@ -290,7 +380,7 @@ label small { font-size: 12px; line-height: 1.6; color: var(--muted); font-weigh
 .setup-steps button[aria-current=step] span, .setup-steps button.completed-step span { color: var(--btn-fg); background: var(--btn-bg); box-shadow: none; }
 .setup-steps button.completed-step { color: var(--text); }
 .profile-fields { min-width: 0; border: 0; margin: 0; padding: 32px 40px 26px; }
-.setup-panel h2, .setup-complete h2 { font-size: 24px; font-weight: 650; letter-spacing: -.025em; line-height: 1.25; margin: 0 0 8px; }
+.setup-panel h2, .setup-complete h2 { font-size: 26px; font-weight: 500; letter-spacing: -.035em; line-height: 1.2; margin: 0 0 8px; }
 .setup-panel h2:focus, .setup-complete h2:focus { outline: none; }
 .step-intro { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 0 0 26px; max-width: 610px; }
 .name-field { max-width: 360px; }
@@ -298,17 +388,18 @@ label small { font-size: 12px; line-height: 1.6; color: var(--muted); font-weigh
 .choice-group legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; padding: 0; }
 .optional { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 7px; }
 .authorization-options { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-form label.choice-row { display: flex; align-items: center; gap: 12px; margin: 0; padding: 14px 15px; border: 0; border-radius: 10px; box-shadow: var(--shadow-1); cursor: pointer; font-weight: 400; transition: box-shadow .15s; }
-.choice-row:has(input:checked) { box-shadow: 0 0 0 1.5px var(--ink), 0 4px 12px rgb(0 0 0 / .06); }
+form label.choice-row { display: flex; align-items: center; gap: 12px; margin: 0; padding: 14px 15px; border: 0; border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-1); cursor: pointer; font-weight: 400; transition: box-shadow .2s var(--ease), transform .2s var(--ease); }
+/* A chosen option takes the blue wash, with a blue edge so the choice reads without color too. */
+.choice-row:has(input:checked) { background: var(--wash); box-shadow: 0 0 0 1.5px var(--accent), 0 4px 12px rgb(0 0 0 / .06); }
 input[type=radio], input[type=checkbox] { accent-color: var(--accent-strong); width: 16px; height: 16px; flex-shrink: 0; padding: 0; margin: 0; }
 .choice-row span { display: grid; gap: 3px; }
 .choice-row strong { font-size: 14px; font-weight: 600; }
 .choice-row small { font-size: 12px; line-height: 1.5; }
 .context-note { padding: 12px 14px; margin: 22px 0 8px; color: var(--muted); font-size: 13px; line-height: 1.6; background: var(--sunken); border-radius: var(--radius-sm); }
 .role-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 11px 12px; margin: 0; border: 0; border-radius: var(--radius-sm); box-shadow: var(--shadow-1); font-size: 13px; font-weight: 500; cursor: pointer; }
-.role-choice:has(input:checked) { box-shadow: 0 0 0 1.5px var(--ink); }
-.role-choice:hover, .choice-row:hover { box-shadow: var(--shadow-2); }
+form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 11px 12px; margin: 0; border: 0; border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-1); font-size: 13px; font-weight: 500; cursor: pointer; transition: box-shadow .2s var(--ease), transform .2s var(--ease); }
+.role-choice:has(input:checked) { background: var(--wash); box-shadow: 0 0 0 1.5px var(--accent); }
+.role-choice:not(:has(input:checked)):hover, .choice-row:not(:has(input:checked)):hover { box-shadow: var(--shadow-2); transform: translateY(-1px); }
 .input-action { display: flex; gap: 8px; margin-top: -12px; }
 .input-action input { min-width: 0; }
 .field-help { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 10px 0 22px; }
@@ -351,29 +442,33 @@ form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 
 
 /* Narrower screens */
 @media (max-width: 1150px) {
-  .content { padding: 28px 28px 48px; }
-  .appbar-inner, .app-footer-inner { padding-inline: 28px; }
-  #profile-label { display: none; }
-  .clock { padding-left: 0; border-left: 0; }
+  .content { padding: 36px 28px 48px; }
+  .app-footer-inner { padding-inline: 28px; }
+  .appbar-inner { padding-inline: 28px; }
+  .appbar-inner::after { right: 28px; left: 28px; }
   .page-heading { flex-wrap: wrap; align-items: start; }
   .list-card.with-filings { --cols: 40px minmax(0, 1fr) 136px 80px 70px 124px; }
   .list-card.with-filings.with-perm { --cols: 40px minmax(0, 1fr) 136px 84px 80px 70px 124px; }
 }
 @media (max-width: 860px) {
-  .appbar-inner { gap: 8px; height: 56px; padding-inline: 16px; }
-  .appbar-inner, .app-footer-inner { padding-inline: 16px; }
+  /* Phones: the logo's icon, the two pages and the initial. */
+  .appbar-inner { gap: 18px; height: 58px; padding-inline: 16px; }
+  .appbar-inner::after { right: 16px; left: 16px; }
+  .app-footer-inner { padding-inline: 16px; }
   .brand { margin-left: -4px; padding: 4px; }
-  .brand span, nav a > span:not(.count) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  nav a { padding: 8px 9px; gap: 6px; }
-  .clock, .connection { display: none; }
-  .content { padding: 22px 16px 40px; }
-  h1 { font-size: 26px; }
+  .brand span, #profile-label, .account-button .icon { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  nav { gap: 18px; }
+  nav a { gap: 6px; }
+  .account-button { padding: 3px; }
+  .connection { display: none; }
+  .content { padding: 30px 16px 40px; }
+  h1 { font-size: 32px; }
   .heading-actions { width: 100%; }
   .heading-actions .button { flex: 1; }
   .summary { gap: 8px; }
   .stat { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; }
   .stat span { font-size: 12px; }
-  .stat strong { font-size: 22px; }
+  .stat strong { font-size: 26px; }
   .toolbar { flex-wrap: wrap; }
   .toolbar .search { flex: 1 1 100%; max-width: none; }
   .toolbar .field { flex: 1; }
@@ -421,7 +516,6 @@ form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 
   .setup-footer { justify-content: space-between; }
   .optional { display: block; margin: 4px 0 0; }
   .summary .stat span { font-size: 11px; }
-  .clock { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }
@@ -467,7 +561,7 @@ form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 
 /* Profile fit, in the parts it is scored from. */
 .fit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .fit-head h3 { margin: 0; }
-.fit-total { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.02em; color: var(--ink); }
+.fit-total { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.04em; color: var(--ink); }
 .fit-rows { display: grid; gap: 14px; }
 .fit-row-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 13px; }
 .fit-label { font-weight: 600; color: var(--text); }
@@ -489,16 +583,18 @@ form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 
 .segmented button:hover { color: var(--ink); }
 .segmented button[aria-pressed=true] { color: var(--ink); background: var(--surface-raised); box-shadow: var(--shadow-1); font-weight: 600; }
 .integrations-list { display: grid; gap: 12px; max-width: 920px; }
-.integration-card { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-1); transition: box-shadow .16s; }
-.integration-card:hover, .integration-card[open] { box-shadow: var(--shadow-2); }
+/* min-width: 0 on the grid items lets a long command scroll inside its block instead of
+   stretching the card past a phone's screen. */
+.integration-card, .setup-list > li { min-width: 0; }
+.integration-card { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-1); }
 .integration-card > summary { display: flex; align-items: center; gap: 14px; padding: 16px 18px; list-style: none; cursor: pointer; }
 .integration-card > summary::-webkit-details-marker { display: none; }
-.integration-card > summary > .icon { color: var(--muted); transition: rotate .15s var(--ease); }
-.integration-card[open] > summary > .icon { rotate: 180deg; }
+.integration-card > summary > .icon { color: var(--muted); transition: rotate .3s var(--ease); }
+.integration-card[open]:not(.is-closing) > summary > .icon { rotate: 180deg; }
 .integration-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; color: var(--accent-strong); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
 .integration-icon .icon { width: 20px; height: 20px; }
 .integration-heading { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.integration-heading strong { font-size: 15px; font-weight: 650; color: var(--ink); }
+.integration-heading strong { font-size: 16px; font-weight: 550; letter-spacing: -.015em; color: var(--ink); }
 .integration-heading span { font-size: 13px; color: var(--muted); }
 .integration-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .integration-body { padding: 0 18px 20px 72px; }
@@ -511,7 +607,8 @@ form label.role-choice { display: flex; align-items: center; gap: 9px; padding: 
 .step-link:hover { box-shadow: inset 0 0 0 1px var(--accent); }
 .step-link .icon { width: 14px; height: 14px; }
 .step-notes { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; line-height: 1.55; color: var(--muted); max-width: 700px; }
-.code-block { position: relative; margin-top: 10px; border-radius: 10px; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line); }
+/* Partly see-through, so the blocks pick up the open card's blue wash instead of sitting on it as gray. */
+.code-block { position: relative; margin-top: 10px; border-radius: 10px; background: color-mix(in srgb, var(--sunken) 70%, transparent); box-shadow: inset 0 0 0 1px var(--line); }
 .code-block pre { margin: 0; padding: 12px 96px 12px 14px; overflow-x: auto; font-family: ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: var(--text); white-space: pre; }
 .code-block pre:focus-visible { outline-offset: -2px; border-radius: 10px; }
 .copy-button { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px; border: 0; border-radius: 7px; font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-1); }

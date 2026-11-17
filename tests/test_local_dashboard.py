@@ -284,6 +284,13 @@ def test_unsafe_links_are_removed(url):
     assert safe_url(url) == ""
 
 
+def test_sky_backgrounds_are_served_as_images(app):
+    for path in ("/sky-light.jpg", "/sky-dark.jpg"):
+        status, headers, body = request(app, path)
+        assert status == 200
+        assert b"image/jpeg" in headers and body[:3] == b"\xff\xd8\xff"
+
+
 def test_api_access_and_private_file_boundary(app):
     status, headers, body = request(app, "/api/bootstrap")
     assert status == 200

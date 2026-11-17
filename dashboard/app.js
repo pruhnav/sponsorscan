@@ -112,6 +112,9 @@ function showView() {
     if (link.dataset.view === name) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   });
+  // Profile and Integrations live in the account menu, so its button marks them.
+  $('#account-button').classList.toggle('current', ['profile', 'integrations'].includes(name));
+  fitSky();
 }
 
 function dateLabel(value) {
@@ -411,7 +414,7 @@ function renderMatches() {
     list.append(more);
   }
   $('#match-count').textContent = report.matches.length;
-  $('#nav-matches').textContent = report.matches.length;
+  $('#nav-matches').textContent = report.matches.length || ''; // an empty count is hidden
   const drops = report.dropped || [];
   $('#exclusions').hidden = !drops.length && !Object.values(report.counts || {}).some(Boolean);
   const excluded = $('#excluded-list');
@@ -454,7 +457,7 @@ function renderApplications() {
   }
   setCount('saved-count', applications.filter(item => item.status === 'saved').length);
   setCount('applied-count', applications.filter(item => item.applied_at).length);
-  $('#nav-applications').textContent = applications.filter(item => item.status !== 'archived').length;
+  $('#nav-applications').textContent = applications.filter(item => item.status !== 'archived').length || '';
 }
 
 async function loadApplications() {
@@ -518,6 +521,117 @@ function fitRow(label, points, max, note) {
   return row;
 }
 
+// "Why this job matched" draws the ranking score as one bar split into the four parts
+// it adds up from, with the profile's cutoff marked, then turns the report's reasons
+// into labeled chips. Reasons the details already show (profile fit, the role and
+// the filing counts) are left out. Colors are a validated categorical set, in order.
+const RANK_PARTS = [['resume_fit_score', 'Profile fit'], ['sponsorship_score', 'Sponsorship'],
+  ['career_level_score', 'Career level'], ['company_fit_points', 'Company']];
+const LEVEL_NAMES = {'entry level': 'Entry level', 'early career': 'Early career', associate: 'Associate level', 'level i': 'Level I'};
+// [pattern, icon, label from the match, is a caution]. Patterns follow the phrases
+// sponsor_daily_report.py writes into why_ranked; anything else shows as written.
+const SIGNALS = [
+  [/^internship$/i, 'sprout', () => 'Internship'],
+  [/^(new grad|university graduate)$/i, 'cap', () => 'For new graduates'],
+  [/^(entry level|early career|associate|level i)$/i, 'steps', m => LEVEL_NAMES[m[1].toLowerCase()]],
+  [/^(\d+)-(\d+) years$/i, 'hourglass', m => `Asks for ${m[1]} to ${m[2]} years`],
+  [/^0 years required$/i, 'hourglass', () => 'No experience required'],
+  [/^1 year requirement$/i, 'hourglass', () => 'Asks for 1 year of experience'],
+  [/^bachelor's$/i, 'diploma', () => "Bachelor's degree"],
+  [/^preferred company$/i, 'star', () => 'A company you prefer'],
+  [/^preferred location$/i, 'pin', () => 'A location you prefer'],
+  [/^historical LCA title overlap$/i, 'file-check', () => 'Has filed for similar titles'],
+  [/^posting mentions sponsorship$/i, 'message', () => 'Posting mentions sponsorship'],
+  [/^sponsors green cards/i, 'id-card', () => 'Sponsors green cards'],
+  [/^fuzzy match \d+ to '(.+)'$/i, 'alert', m => `Filings matched by a similar name, ${m[1]}`, true],
+  [/^most filings place workers at client sites \((\d+%)\)$/i, 'alert', m => `Most filings place workers at client sites (${m[1]})`, true],
+  [/^no filings since (FY\d+)$/i, 'alert', m => `No filings since ${m[1].toUpperCase()}`, true],
+  [/^location unclear/i, 'alert', () => 'Location unclear, check it is in the US', true],
+];
+const SHOWN_ABOVE = [/\/100 resume fit$/i, /^\d+ certified LCAs$/i];
+
+function signalChip(name, label) {
+  const chip = node('li', 'signal');
+  chip.append(icon(name), node('span', '', label));
+  return chip;
+}
+
+function tierChip(tier) {
+  const chip = signalChip('building', 'Company tier');
+  const dots = node('span', 'tier-dots');
+  dots.setAttribute('aria-hidden', 'true');
+  for (let step = 1; step <= 5; step++) dots.append(node('i', step <= tier ? 'on' : ''));
+  chip.append(dots, node('span', 'sr-only', `${tier} of 5`));
+  chip.title = `Company tier ${tier} of 5`;
+  return chip;
+}
+
+function renderRank(job) {
+  const parts = RANK_PARTS.map(([field, name], index) => ({name, slot: index + 1, points: Number(job[field]) || 0}));
+  if (!needsSponsorship()) parts[1].name = 'Sponsorship, the same for every job';
+  const total = parts.reduce((sum, part) => sum + part.points, 0);
+  const scored = 'combined_score' in job && total > 0;
+  $('#rank').hidden = !scored;
+  $('#rank-total').textContent = scored ? `${total} points` : '';
+  if (scored) drawRank(parts.filter(part => part.points > 0), total);
+  const good = []; const cautions = [];
+  for (const reason of (job.why_ranked || '').split(';').map(text => text.trim()).filter(Boolean)) {
+    if (SHOWN_ABOVE.some(pattern => pattern.test(reason)) || reason.toLowerCase() === (job.role_family || '').toLowerCase()) continue;
+    const tier = reason.match(/^company tier (\d)\/5$/i);
+    if (tier) { good.push(tierChip(Number(tier[1]))); continue; }
+    const rule = SIGNALS.find(([pattern]) => pattern.test(reason));
+    if (!rule) { good.push(signalChip('dot', capitalize(reason))); continue; }
+    (rule[3] ? cautions : good).push(signalChip(rule[1], rule[2](reason.match(rule[0]))));
+  }
+  $('#detail-reasons').replaceChildren(...good);
+  $('#detail-cautions').replaceChildren(...cautions);
+  $('#detail-evidence').hidden = !scored && !good.length && !cautions.length;
+}
+
+function drawRank(parts, total) {
+  const cutoff = Number(report.metadata?.minimum_score) || 0;
+  const track = $('#rank-track');
+  const blocks = parts.map((part, index) => {
+    const block = node('span', `rank-part slot-${part.slot}`);
+    block.style.flex = `${part.points} 1 0`; // widths proportional to points, not text
+    block.tabIndex = 0;
+    block.dataset.tip = `${part.name}: ${part.points} points, ${Math.round(part.points / total * 100)}%`;
+    block.setAttribute('aria-label', block.dataset.tip);
+    block.append(node('span', 'rank-value', part.points));
+    return block;
+  });
+  track.replaceChildren(...blocks);
+  track.setAttribute('role', 'group');
+  track.setAttribute('aria-label', `Ranking score, ${total} points${cutoff ? `. Your cutoff is ${cutoff}` : ''}`);
+  if (cutoff && cutoff < total) {
+    const share = cutoff / total * 100;
+    const marker = node('span', share > 85 ? 'rank-cutoff end' : share < 15 ? 'rank-cutoff start' : 'rank-cutoff');
+    marker.style.left = `${share}%`;
+    marker.setAttribute('aria-hidden', 'true');
+    marker.append(node('span', 'rank-cutoff-label', `Your cutoff ${cutoff}`));
+    track.append(marker);
+  }
+  $('#rank-note').textContent = cutoff
+    ? `Jobs are ranked by adding these scores. Your profile leaves out jobs under ${cutoff}.`
+    : 'Jobs are ranked by adding these scores.';
+  // Widths exist once the dialog is open. A part too narrow for its number prints none,
+  // and the legend carries that number instead.
+  requestAnimationFrame(() => {
+    const legend = parts.map((part, index) => {
+      const block = blocks[index];
+      const value = block.querySelector('.rank-value');
+      const narrow = block.clientWidth < value.scrollWidth + 14;
+      block.classList.toggle('narrow', narrow);
+      block.classList.toggle('tip-end', block.offsetLeft + block.offsetWidth / 2 > track.clientWidth / 2);
+      const item = node('li');
+      item.append(node('i', `slot-${part.slot}`), node('span', '', part.name));
+      if (narrow) item.append(node('b', '', part.points));
+      return item;
+    });
+    $('#rank-legend').replaceChildren(...legend);
+  });
+}
+
 // Profile fit is the role's base score plus skill points, capped at 100. The
 // server sends those same parts, so they add up to the number in the row.
 function renderFit(job) {
@@ -561,11 +675,7 @@ function showJob(job) {
   const evidence = needsSponsorship() && 'lca_certified' in live;
   $('#detail-sponsorship').hidden = !evidence;
   if (evidence) renderSponsorship(live);
-  const reasons = (live.why_ranked || '').replaceAll('resume fit', 'profile fit').split(';').map(s => s.trim()).filter(Boolean);
-  $('#detail-evidence').hidden = !reasons.length;
-  // Reasons mix strengths with cautions ("location unclear"), so they get a
-  // neutral marker rather than a check.
-  $('#detail-reasons').replaceChildren(...reasons.map(reason => node('li', '', capitalize(reason))));
+  renderRank(live);
   $('#detail-status').value = job.status || 'saved';
   menus.get($('#detail-status'))?.refresh();
   $('#remove-application').hidden = !job.status;
@@ -838,7 +948,7 @@ function brandMark(id) {
 }
 
 function sectionCard(section, open) {
-  const card = node('details', 'integration-card');
+  const card = node('details', 'integration-card slide');
   card.open = open; card.id = `setup-${section.id}`;
   const summary = node('summary');
   const badge = node('span', brandMarks.has(section.id) ? 'integration-icon has-mark' : 'integration-icon');
@@ -880,7 +990,7 @@ function sectionCard(section, open) {
 function renderIntegrations() {
   document.querySelectorAll('[data-shell]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.shell === setupShell)));
   if (!setupGuide) return;
-  const open = new Set([...document.querySelectorAll('.integration-card[open]')].map(card => card.id));
+  const open = new Set([...document.querySelectorAll('.integration-card[open]:not(.is-closing)')].map(card => card.id));
   const sections = setupGuide.sections[setupShell];
   const ordered = sectionOrder.map(id => sections.find(section => section.id === id)).filter(Boolean);
   // Telegram starts open on a first visit: it is the quickest to set up.
@@ -961,7 +1071,7 @@ function showTask(task) {
 
 async function reload(fillForm = false) {
   boot = await api('/api/bootstrap'); token = boot.token;
-  renderGreeting(new Date());
+  renderAccount();
   $('#connection').textContent = 'Connected locally';
   $('#connection').classList.add('connected');
   if (fillForm) fillProfile();
@@ -1141,21 +1251,43 @@ function exportCSV(rows, fields, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function renderGreeting(now) {
-  const hour = now.getHours();
-  const part = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
-  const name = (boot?.profile?.name || '').trim();
+// The account button shows the profile's first name and its initial.
+function renderAccount() {
+  const name = (boot?.profile?.name || '').trim().split(/\s+/)[0] || '';
   // A name typed all in lowercase is capitalized; any other spelling is kept.
-  $('#profile-label').textContent = name ? `${part}, ${name === name.toLowerCase() ? capitalize(name) : name}` : 'Set up your workspace';
+  const shown = name === name.toLowerCase() ? capitalize(name) : name;
+  $('#profile-label').textContent = shown || 'Set up';
+  $('#account-initial').textContent = shown ? shown[0].toUpperCase() : '';
+  $('#account-button').setAttribute('aria-label', shown ? `${shown}: profile, integrations and theme` : 'Set up your profile, integrations and theme');
 }
 
-// The clock ticks on each minute boundary rather than polling every second.
-function tickClock() {
-  const now = new Date();
-  $('#clock').textContent = now.toLocaleString(undefined, {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
-  $('#clock').dateTime = now.toISOString();
-  if (boot) renderGreeting(now);
-  setTimeout(tickClock, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
+// The account menu is a popover, so the browser closes it on Escape or an outside
+// click. It lives in the top layer, so it is placed under its button by hand.
+const accountMenu = $('#account-menu');
+function placeAccountMenu() {
+  const box = $('#account-button').getBoundingClientRect();
+  accountMenu.style.top = `${Math.round(box.bottom + 8)}px`;
+  accountMenu.style.right = `${Math.round(document.documentElement.clientWidth - box.right)}px`;
+}
+accountMenu.addEventListener('toggle', event => {
+  const open = event.newState === 'open';
+  $('#account-button').setAttribute('aria-expanded', String(open));
+  if (open) placeAccountMenu();
+});
+['resize', 'scroll'].forEach(type => addEventListener(type, () => { if (accountMenu.matches(':popover-open')) placeAccountMenu(); }, {passive: true}));
+accountMenu.querySelectorAll('a').forEach(link => link.addEventListener('click', () => accountMenu.hidePopover()));
+
+// The sky behind the bar reaches past the open page's heading and, on Matches, past the
+// summary boxes too, then fades out. CSS can't read where those end, so this passes it
+// to the stylesheet as --sky-height.
+function fitSky() {
+  const view = document.querySelector('.view:not([hidden])');
+  const last = view?.querySelector('.summary') || view?.querySelector('.page-heading');
+  if (last) document.body.style.setProperty('--sky-height', `${Math.round(last.getBoundingClientRect().bottom + scrollY + 36)}px`);
+}
+if ('ResizeObserver' in window) {
+  const skyWatch = new ResizeObserver(fitSky);
+  document.querySelectorAll('.page-heading, .summary, #task-status, #warnings').forEach(element => skyWatch.observe(element));
 }
 
 // The theme is a per-browser convenience. theme.js applied the saved choice
@@ -1170,26 +1302,14 @@ function applyTheme() {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.querySelector('meta[name="theme-color"]').content = dark ? '#151517' : '#ffffff';
   document.querySelectorAll('[data-theme-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === themeChoice)));
-  // The current choice sits last, where the closed switch shows it.
-  const group = $('.theme-switch');
-  const chosen = group.querySelector(`[data-theme-choice="${themeChoice}"]`);
-  if (group.lastElementChild !== chosen) {
-    const focused = document.activeElement === chosen;
-    group.append(chosen);
-    if (focused) chosen.focus();
-  }
 }
 
+// The menu stays open after a theme choice, so the change can be seen and undone.
 document.querySelectorAll('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
   themeChoice = button.dataset.themeChoice; storeSetting('sponsorscan-theme', themeChoice); applyTheme();
-  // Close right after a choice; reopen once the pointer leaves or a key is pressed.
-  $('.theme-switch').classList.add('settled');
 }));
-$('.theme-switch').addEventListener('pointerleave', () => $('.theme-switch').classList.remove('settled'));
-$('.theme-switch').addEventListener('keydown', () => $('.theme-switch').classList.remove('settled'));
 themeMedia.addEventListener('change', applyTheme);
 applyTheme();
-tickClock();
 
 for (const selector of ['#role-filter', '#match-sort', '#status-filter', '#detail-status']) enhanceSelect($(selector));
 document.addEventListener('pointerdown', event => { if (openMenu && !openMenu.wrap.contains(event.target)) openMenu.close(false); });
@@ -1269,6 +1389,21 @@ for (const selector of ['#application-search', '#status-filter']) $(selector).ad
 $('#close-detail').addEventListener('click', () => $('#job-dialog').close());
 $('#close-manual').addEventListener('click', () => $('#manual-dialog').close());
 for (const selector of ['#job-dialog', '#manual-dialog']) $(selector).addEventListener('close', () => lastFocus?.isConnected && lastFocus.focus());
+// A click on the dimmed backdrop closes a dialog, as Escape does. Backdrop clicks reach
+// the dialog itself from outside its box. The press must start outside too, so a text
+// selection dragged out of the dialog does not close it.
+document.querySelectorAll('dialog').forEach(dialog => {
+  let pressedOutside = false;
+  const outside = event => {
+    const box = dialog.getBoundingClientRect();
+    return event.target === dialog && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom);
+  };
+  dialog.addEventListener('pointerdown', event => { pressedOutside = outside(event); });
+  dialog.addEventListener('click', event => {
+    if (pressedOutside && outside(event)) dialog.close();
+    pressedOutside = false;
+  });
+});
 $('#add-application').addEventListener('click', () => {
   lastFocus = document.activeElement; $('#manual-form').reset(); $('#manual-save-status').textContent = ''; $('#manual-dialog').showModal();
 });
@@ -1325,6 +1460,41 @@ $('#profile-form').addEventListener('submit', async event => {
     document.querySelectorAll('[data-step]').forEach(button => { button.disabled = false; });
     if (!saved) $('#setup-next').textContent = first ? 'Create my workspace' : 'Save changes';
   }
+});
+// Panels marked .slide (the integration cards and the filtered-out list) slide open and
+// shut instead of snapping. They stay <details>, so the browser still opens them for
+// find-in-page and without this script. A closing panel keeps its open attribute until
+// the slide ends, with .is-closing set so the CSS drops the lift and wash straight away.
+const panelSlides = new Map();
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const panelShown = panel => panel.open && !panel.classList.contains('is-closing');
+function slidePanel(panel, open) {
+  if (panelShown(panel) === open) return;
+  const summary = panel.querySelector(':scope > summary');
+  const contents = [...panel.children].filter(child => child !== summary);
+  // Start from where the panel is now, which is part way if the last slide hasn't ended.
+  const fromHeight = panel.getBoundingClientRect().height;
+  const fromOpacity = contents.map(child => panel.open ? Number(getComputedStyle(child).opacity) : 0);
+  panelSlides.get(panel)?.forEach(animation => animation.cancel());
+  panel.classList.toggle('is-closing', !open);
+  const settle = () => { panelSlides.delete(panel); panel.classList.remove('is-closing', 'is-sliding'); panel.open = open; };
+  if (reducedMotion.matches) return settle();
+  panel.open = true;
+  const edges = panel.offsetHeight - panel.clientHeight;
+  const toHeight = open ? panel.getBoundingClientRect().height : summary.getBoundingClientRect().height + edges;
+  panel.classList.add('is-sliding');
+  const timing = { duration: 380, easing: 'cubic-bezier(.2, .7, .2, 1)', fill: 'forwards' };
+  const slide = panel.animate({ height: [`${fromHeight}px`, `${toHeight}px`] }, timing);
+  const fades = contents.map((child, index) => child.animate({ opacity: [fromOpacity[index], open ? 1 : 0] }, { ...timing, easing: 'ease' }));
+  panelSlides.set(panel, [slide, ...fades]);
+  // Close the panel before releasing the fills, so a shut panel never flashes open.
+  slide.onfinish = () => { settle(); [slide, ...fades].forEach(animation => animation.cancel()); };
+}
+document.addEventListener('click', event => {
+  const summary = event.target.closest('details.slide > summary');
+  if (!summary) return;
+  event.preventDefault();
+  slidePanel(summary.parentElement, !panelShown(summary.parentElement));
 });
 $('#export-matches').addEventListener('click', () => exportCSV(filteredMatches(), ['company', 'title', 'location', 'url', 'source', 'posted', 'combined_score', 'resume_fit_score', 'why_ranked'], 'sponsorscan-matches.csv'));
 $('#export-applications').addEventListener('click', () => exportCSV(filteredApplications(), ['company', 'title', 'url', 'status', 'notes', 'created_at', 'applied_at', 'updated_at'], 'sponsorscan-applications.csv'));

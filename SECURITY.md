@@ -10,7 +10,7 @@ before reporting.
 Please do not open a public issue for security problems.
 
 Report vulnerabilities privately through GitHub's
-[private vulnerability reporting](https://github.com/pruhnav/sponsorscan/security/advisories/new).
+[private vulnerability reporting](https://github.com/sponsorscan/sponsorscan/security/advisories/new).
 Include:
 
 - A description of the issue and its impact
